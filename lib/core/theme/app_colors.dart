@@ -2,49 +2,56 @@ import 'package:flutter/material.dart';
 
 /// Central colour palette for Rovlo.
 ///
-/// Keeping every colour here guarantees a single, constant theme across the
-/// whole app. Screens should never hard-code colours — always reference these.
+/// Light mode: pearl-white surfaces + premium dark peach buttons/accents.
+/// Dark mode:  midnight navy-blue surfaces + vibrant orange-peach buttons/accents.
 class AppColors {
   AppColors._();
 
-  // Brand
-  static const Color primary = Color(0xFF1FB6A6); // teal / travel green-blue
-  static const Color primaryDark = Color(0xFF0E8C80);
-  static const Color accent = Color(0xFFFFB74D); // warm sunset amber
-  static const Color secondary = Color(0xFF3A6EA5); // deep sky blue
+  // ── Brand / Peach ──────────────────────────────────────────────────────────
+  static const Color primary = Color(0xFFD46227);       // Rich dark peach (light mode default)
+  static const Color primaryDark = Color(0xFFB54F1C);    // Deeper peach
+  static const Color primaryLight = Color(0xFFF79E6E);   // Lighter peach
+  static const Color accent = Color(0xFFD46227);         // Peach accent
+  static const Color secondary = Color(0xFFF9D3BD);      // Soft attractive peach shade
 
-  // Gradients used behind the welcome video / hero areas.
+  // ── Vibrant dark-mode peach ────────────────────────────────────────────────
+  static const Color primaryVibrantDark = Color(0xFFFF7C32); // Super attractive peach for dark mode
+
+  // ── Gradients ──────────────────────────────────────────────────────────────
   static const List<Color> brandGradient = [
-    Color(0xFF0E8C80),
-    Color(0xFF1FB6A6),
-    Color(0xFF3A6EA5),
+    Color(0xFFD46227),
+    Color(0xFFE57A3C),
+    Color(0xFFB54F1C),
   ];
 
   static const List<Color> sunsetGradient = [
-    Color(0xFFFF8A65),
-    Color(0xFFFFB74D),
-    Color(0xFF7E57C2),
+    Color(0xFFFF7C32),
+    Color(0xFFFF9E68),
+    Color(0xFFD46227),
   ];
 
-  // Light theme surfaces
-  static const Color lightBackground = Color(0xFFF6F8FA);
+  // ── Light theme surfaces (pearl white) ─────────────────────────────────────
+  static const Color lightBackground = Color(0xFFFAF8F5); // warm pearl white
   static const Color lightSurface = Color(0xFFFFFFFF);
   static const Color lightCard = Color(0xFFFFFFFF);
-  static const Color lightTextPrimary = Color(0xFF10202B);
-  static const Color lightTextSecondary = Color(0xFF5B6B78);
+  static const Color lightTextPrimary = Color(0xFF1E140F);  // High contrast near-black warm brown
+  static const Color lightTextSecondary = Color(0xFF6B5D55); // Muted brown
 
-  // Dark theme surfaces
-  static const Color darkBackground = Color(0xFF0B1418);
-  static const Color darkSurface = Color(0xFF12222A);
-  static const Color darkCard = Color(0xFF172A33);
-  static const Color darkTextPrimary = Color(0xFFF2F6F8);
-  static const Color darkTextSecondary = Color(0xFF9FB2BC);
+  // ── Dark theme surfaces (deeper navy blue) ──────────────────────────────────
+  static const Color darkBackground = Color(0xFF040911);  // Midnight space background (very dark)
+  static const Color darkSurface = Color(0xFF0D1623);     // Deep slate navy surface
+  static const Color darkCard = Color(0xFF142031);         // Card navy blue
+  static const Color darkTextPrimary = Color(0xFFF5F6F8);
+  static const Color darkTextSecondary = Color(0xFF8FA0B5);
 
-  // Semantic
+  // ── Semantic ───────────────────────────────────────────────────────────────
   static const Color success = Color(0xFF2ECC71);
   static const Color error = Color(0xFFE74C3C);
   static const Color warning = Color(0xFFF39C12);
 
   static const Color overlayDark = Color(0x99000000);
   static const Color overlayLight = Color(0x33000000);
+
+  // ── High Contrast Black Elements ───────────────────────────────────────────
+  static const Color elementBlack = Color(0xFF1A1A1A);  // Bold black accents
 }

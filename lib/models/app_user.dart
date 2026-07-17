@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 /// Authentication provider used to create / sign into an account.
+/// enum AuthMethod { google, apple, phone }
 enum AuthMethod { google, apple, phone }
 
 /// A Rovlo user account + profile.
@@ -15,6 +16,7 @@ class AppUser {
     this.authMethod = AuthMethod.phone,
     this.travelInterests = const <String>[],
     this.photoUrl,
+    this.bio,
     this.isBlocked = false,
     this.profileComplete = false,
   });
@@ -28,6 +30,7 @@ class AppUser {
   final AuthMethod authMethod;
   final List<String> travelInterests;
   final String? photoUrl;
+  final String? bio;
   final bool isBlocked;
   final bool profileComplete;
 
@@ -58,6 +61,7 @@ class AppUser {
     AuthMethod? authMethod,
     List<String>? travelInterests,
     String? photoUrl,
+    String? bio,
     bool? isBlocked,
     bool? profileComplete,
   }) {
@@ -71,6 +75,7 @@ class AppUser {
       authMethod: authMethod ?? this.authMethod,
       travelInterests: travelInterests ?? this.travelInterests,
       photoUrl: photoUrl ?? this.photoUrl,
+      bio: bio ?? this.bio,
       isBlocked: isBlocked ?? this.isBlocked,
       profileComplete: profileComplete ?? this.profileComplete,
     );
@@ -86,6 +91,7 @@ class AppUser {
         'authMethod': authMethod.name,
         'travelInterests': travelInterests,
         'photoUrl': photoUrl,
+        'bio': bio,
         'isBlocked': isBlocked,
         'profileComplete': profileComplete,
       };
@@ -107,6 +113,7 @@ class AppUser {
                 .map((e) => e.toString())
                 .toList(),
         photoUrl: map['photoUrl'] as String?,
+        bio: map['bio'] as String?,
         isBlocked: map['isBlocked'] as bool? ?? false,
         profileComplete: map['profileComplete'] as bool? ?? false,
       );

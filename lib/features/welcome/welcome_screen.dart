@@ -53,10 +53,11 @@ class WelcomeScreen extends StatelessWidget {
                     .fadeIn(duration: 600.ms, delay: 700.ms)
                     .slideY(begin: 0.4, curve: Curves.easeOutCubic),
                 const SizedBox(height: 14),
-                _SignInButton()
+                 _SignInButton()
                     .animate()
-                    .fadeIn(duration: 600.ms, delay: 820.ms)
-                    .slideY(begin: 0.4, curve: Curves.easeOutCubic),
+                    .fadeIn(duration: 800.ms, delay: 850.ms)
+                    .scaleXY(begin: 0.9, end: 1.0, curve: Curves.easeOutBack)
+                    .slideY(begin: 0.15, end: 0.0, curve: Curves.easeOutQuad),
                 const SizedBox(height: 22),
                 const _TermsText()
                     .animate()
@@ -103,8 +104,11 @@ class _SignInButton extends StatelessWidget {
         ),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
-          backgroundColor: Colors.white.withValues(alpha: 0.10),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.6)),
+          backgroundColor: Colors.transparent, // Fully transparent
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.35), width: 1.2), // Transparent border
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
         child: const Text('Sign In'),
       ),
@@ -117,7 +121,7 @@ class _TermsText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final linkStyle = const TextStyle(
+    const linkStyle = TextStyle(
       color: Colors.white,
       fontWeight: FontWeight.w600,
       decoration: TextDecoration.underline,
