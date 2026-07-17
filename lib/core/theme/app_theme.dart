@@ -22,7 +22,7 @@ class AppTheme {
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
-      primary: AppColors.primary,
+      primary: isDark ? AppColors.primaryVibrantDark : AppColors.primary,
       onPrimary: Colors.white,
       secondary: AppColors.secondary,
       onSecondary: Colors.white,
@@ -52,7 +52,7 @@ class AppTheme {
       scaffoldBackgroundColor: background,
       canvasColor: background,
       textTheme: baseText,
-      primaryColor: AppColors.primary,
+      primaryColor: scheme.primary,
       splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
         elevation: 0,
@@ -69,7 +69,7 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: scheme.primary,
           foregroundColor: Colors.white,
           elevation: 0,
           minimumSize: const Size.fromHeight(56),
@@ -97,7 +97,7 @@ class AppTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+        style: TextButton.styleFrom(foregroundColor: scheme.primary),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -117,12 +117,12 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radius),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+          borderSide: BorderSide(color: scheme.primary, width: 1.6),
         ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: card,
-        selectedItemColor: AppColors.primary,
+        selectedItemColor: scheme.primary,
         unselectedItemColor: textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
@@ -134,12 +134,12 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? AppColors.primary
+              ? scheme.primary
               : Colors.grey,
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? AppColors.primary.withValues(alpha: 0.4)
+              ? scheme.primary.withValues(alpha: 0.4)
               : Colors.grey.withValues(alpha: 0.3),
         ),
       ),

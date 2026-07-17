@@ -20,15 +20,15 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          _SectionLabel('Appearance'),
+          const _SectionLabel('Appearance'),
           const SizedBox(height: 12),
           _QuickDarkToggle(theme: theme),
           const SizedBox(height: 16),
           _ThemeModeCard(theme: theme),
           const SizedBox(height: 28),
-          _SectionLabel('About'),
+          const _SectionLabel('About'),
           const SizedBox(height: 12),
-          _InfoTile(
+          const _InfoTile(
             icon: Icons.info_outline,
             title: 'Version',
             trailing: '1.0.0',
