@@ -19,6 +19,11 @@ class AppUser {
     this.bio,
     this.isBlocked = false,
     this.profileComplete = false,
+    this.dob,
+    this.homeBase,
+    this.isVerified = false,
+    this.subscriptionTier = 'free',
+    this.emergencyContacts = const [],
   });
 
   final String id;
@@ -33,6 +38,11 @@ class AppUser {
   final String? bio;
   final bool isBlocked;
   final bool profileComplete;
+  final String? dob;
+  final String? homeBase;
+  final bool isVerified;
+  final String subscriptionTier;
+  final List<Map<String, String>> emergencyContacts;
 
   bool get isAdmin => false; // resolved via AppConstants.isAdminEmail(email)
 
@@ -53,6 +63,22 @@ class AppUser {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
+  /// Calculates profile completion percentage (0.0 to 1.0).
+  double get profileCompletionPercent {
+    int filled = 0;
+    const total = 9;
+    if (name != null && name!.trim().isNotEmpty) filled++;
+    if (bio != null && bio!.trim().isNotEmpty) filled++;
+    if (photoUrl != null && photoUrl!.isNotEmpty) filled++;
+    if (dob != null && dob!.isNotEmpty) filled++;
+    if (homeBase != null && homeBase!.isNotEmpty) filled++;
+    if (gender != null && gender!.isNotEmpty) filled++;
+    if (travelInterests.isNotEmpty) filled++;
+    if (isVerified) filled++;
+    if (emergencyContacts.isNotEmpty) filled++;
+    return filled / total;
+  }
+
   AppUser copyWith({
     String? name,
     String? email,
@@ -64,6 +90,11 @@ class AppUser {
     String? bio,
     bool? isBlocked,
     bool? profileComplete,
+    String? dob,
+    String? homeBase,
+    bool? isVerified,
+    String? subscriptionTier,
+    List<Map<String, String>>? emergencyContacts,
   }) {
     return AppUser(
       id: id,
@@ -78,6 +109,11 @@ class AppUser {
       bio: bio ?? this.bio,
       isBlocked: isBlocked ?? this.isBlocked,
       profileComplete: profileComplete ?? this.profileComplete,
+      dob: dob ?? this.dob,
+      homeBase: homeBase ?? this.homeBase,
+      isVerified: isVerified ?? this.isVerified,
+      subscriptionTier: subscriptionTier ?? this.subscriptionTier,
+      emergencyContacts: emergencyContacts ?? this.emergencyContacts,
     );
   }
 
@@ -94,6 +130,11 @@ class AppUser {
         'bio': bio,
         'isBlocked': isBlocked,
         'profileComplete': profileComplete,
+        'dob': dob,
+        'homeBase': homeBase,
+        'isVerified': isVerified,
+        'subscriptionTier': subscriptionTier,
+        'emergencyContacts': emergencyContacts,
       };
 
   factory AppUser.fromMap(Map<String, dynamic> map) => AppUser(
@@ -116,6 +157,13 @@ class AppUser {
         bio: map['bio'] as String?,
         isBlocked: map['isBlocked'] as bool? ?? false,
         profileComplete: map['profileComplete'] as bool? ?? false,
+        dob: map['dob'] as String?,
+        homeBase: map['homeBase'] as String?,
+        isVerified: map['isVerified'] as bool? ?? false,
+        subscriptionTier: map['subscriptionTier'] as String? ?? 'free',
+        emergencyContacts: (map['emergencyContacts'] as List<dynamic>? ?? const [])
+            .map((e) => Map<String, String>.from(e as Map))
+            .toList(),
       );
 
   String toJson() => jsonEncode(toMap());

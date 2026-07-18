@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/widgets/animated_gradient_background.dart';
 import '../../core/widgets/rovlo_logo.dart';
 import '../../core/widgets/social_auth_buttons.dart';
+import '../../core/widgets/video_background.dart';
 import '../../models/app_user.dart';
 import '../../providers/auth_provider.dart';
 
@@ -66,15 +67,15 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
   }
 
   void _routeAfterAuth(AppUser user) {
-    if (_isSignIn && user.profileComplete) {
+    if (_isSignIn) {
+      // Sign-in: always go straight to home — user already has an account.
       Navigator.pushNamedAndRemoveUntil(
         context,
         Routes.home,
         (route) => false,
       );
     } else {
-      // New account, or an existing account that never finished onboarding:
-      // continue with profile setup (name -> gender -> travel).
+      // Create Account: continue with profile setup (name -> gender -> dob -> travel).
       Navigator.pushNamedAndRemoveUntil(
         context,
         Routes.name,
@@ -86,21 +87,11 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned.fill(
-            child: AnimatedGradientBackground(),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.25),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+      body: VideoBackground(
+        assetPath: AppConstants.signInVideoAsset,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Column(
                 children: [
                   Align(
@@ -170,10 +161,9 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

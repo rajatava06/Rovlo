@@ -9,6 +9,7 @@ class AppConstants {
   /// Drop an .mp4 at this path to enable the video; otherwise an animated
   /// gradient fallback is shown automatically.
   static const String welcomeVideoAsset = 'assets/videos/welcome.mp4';
+  static const String signInVideoAsset = 'assets/videos/signinvideo.mp4';
 
   /// Terms & Conditions / Privacy links surfaced on the Welcome screen.
   static const String termsUrl = 'https://rovlo.app/terms';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../features/admin/admin_panel_screen.dart';
+import '../../features/auth/dob_screen.dart';
 import '../../features/auth/gender_screen.dart';
 import '../../features/auth/name_screen.dart';
 import '../../features/auth/phone_number_screen.dart';
@@ -19,6 +20,7 @@ class Routes {
   static const String socialAuth = '/auth/social';
   static const String name = '/create/name';
   static const String gender = '/create/gender';
+  static const String dob = '/create/dob';
   static const String travel = '/create/travel';
   static const String home = '/home';
   static const String settings = '/settings';
@@ -44,6 +46,8 @@ class Routes {
         return (_) => const NameScreen();
       case gender:
         return (_) => const GenderScreen();
+      case dob:
+        return (_) => const DobScreen();
       case travel:
         return (_) => const TravelPreferencesScreen();
       case home:

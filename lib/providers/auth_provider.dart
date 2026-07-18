@@ -153,6 +153,51 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setDob(String dob) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final updated = user.copyWith(dob: dob);
+    await _auth.updateUser(updated);
+    _currentUser = updated;
+    notifyListeners();
+  }
+
+  Future<void> setHomeBase(String homeBase) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final updated = user.copyWith(homeBase: homeBase);
+    await _auth.updateUser(updated);
+    _currentUser = updated;
+    notifyListeners();
+  }
+
+  Future<void> setVerified(bool verified) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final updated = user.copyWith(isVerified: verified);
+    await _auth.updateUser(updated);
+    _currentUser = updated;
+    notifyListeners();
+  }
+
+  Future<void> setSubscriptionTier(String tier) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final updated = user.copyWith(subscriptionTier: tier);
+    await _auth.updateUser(updated);
+    _currentUser = updated;
+    notifyListeners();
+  }
+
+  Future<void> setEmergencyContacts(List<Map<String, String>> contacts) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final updated = user.copyWith(emergencyContacts: contacts);
+    await _auth.updateUser(updated);
+    _currentUser = updated;
+    notifyListeners();
+  }
+
   Future<void> setTravelInterests(List<String> interests) async {
     final user = _currentUser;
     if (user == null) return;
@@ -165,13 +210,21 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateProfile({String? name, String? bio, String? photoUrl}) async {
+  Future<void> updateProfile({
+    String? name,
+    String? bio,
+    String? photoUrl,
+    String? dob,
+    String? homeBase,
+  }) async {
     final user = _currentUser;
     if (user == null) return;
     final updated = user.copyWith(
       name: name?.trim() ?? user.name,
       bio: bio?.trim() ?? user.bio,
       photoUrl: photoUrl ?? user.photoUrl,
+      dob: dob ?? user.dob,
+      homeBase: homeBase ?? user.homeBase,
     );
     await _auth.updateUser(updated);
     _currentUser = updated;
