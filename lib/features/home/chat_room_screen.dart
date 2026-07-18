@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/traveler.dart';
+import 'traveler_profile_screen.dart';
 
 class ChatRoomArgs {
   final String name;
@@ -114,49 +116,76 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundImage: NetworkImage(widget.args.imageUrl),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          widget.args.name,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (widget.args.isVerified) ...[
-                        const SizedBox(width: 4),
-                        const Icon(Icons.verified, color: AppColors.primary, size: 14),
-                      ],
-                    ],
-                  ),
-                  const Text(
-                    'Active now',
-                    style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.normal),
-                  ),
-                ],
+        title: GestureDetector(
+          onTap: () {
+            final travelerName = widget.args.name;
+            final matchingTravelers = SampleTravelers.list.where((t) => t.name == travelerName);
+            final traveler = matchingTravelers.isNotEmpty
+                ? matchingTravelers.first
+                : Traveler(
+                    name: widget.args.name,
+                    age: 24,
+                    imageUrl: widget.args.imageUrl,
+                    imageUrls: [widget.args.imageUrl],
+                    location: 'Tokyo',
+                    dateRange: 'Oct 25 - Nov 2',
+                    tags: ['Backpacker'],
+                    isVerified: widget.args.isVerified,
+                    description: 'Hey! Let\'s chat and travel together!',
+                    about: 'Hey! I\'m ${widget.args.name}. Let\'s explore the city and hang out!',
+                  );
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TravelerProfileScreen(traveler: traveler),
               ),
-            ),
-          ],
+            );
+          },
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundImage: NetworkImage(widget.args.imageUrl),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.args.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.args.isVerified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified, color: AppColors.primary, size: 14),
+                        ],
+                      ],
+                    ),
+                    const Text(
+                      'Active now',
+                      style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.normal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           IconButton(
             onPressed: () {},
-            icon: const Icon(Icons.videocam_outlined),
+            icon: const Icon(Icons.call_outlined),
           ),
           IconButton(
             onPressed: () {},
@@ -211,38 +240,46 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 Center(
                   child: Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              color: primaryPeach,
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Me',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      SizedBox(
+                        width: 84,
+                        height: 46,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              left: 0,
+                              child: Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  color: primaryPeach,
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    'Me',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: -8),
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              image: DecorationImage(
-                                image: NetworkImage(widget.args.imageUrl),
-                                fit: BoxFit.cover,
+                            Positioned(
+                              left: 38,
+                              child: Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  image: DecorationImage(
+                                    image: NetworkImage(widget.args.imageUrl),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Container(
@@ -355,7 +392,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
           // ── Bottom Message Composer Bar ──────────────────────────────────────
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurface : Colors.white,
               border: Border(
@@ -369,39 +406,36 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 children: [
                   IconButton(
                     onPressed: () {},
-                    icon: const Icon(Icons.add, color: AppColors.accent),
+                    icon: Icon(Icons.add, color: isDark ? Colors.white70 : Colors.black54),
                   ),
                   IconButton(
                     onPressed: () {},
-                    icon: const Icon(Icons.image_outlined, color: AppColors.accent),
+                    icon: Icon(Icons.image_outlined, color: isDark ? Colors.white70 : Colors.black54),
                   ),
                   Expanded(
-                    child: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkCard : const Color(0xFFF3F3F3),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: TextField(
-                              controller: _textController,
-                              decoration: const InputDecoration(
-                                hintText: 'Type a message...',
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 8),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {},
-                            icon: const Icon(Icons.sentiment_satisfied_alt_outlined, color: Colors.grey),
-                          ),
-                        ],
+                    child: TextField(
+                      controller: _textController,
+                      decoration: InputDecoration(
+                        hintText: 'Type a message...',
+                        filled: true,
+                        fillColor: isDark ? AppColors.darkCard : Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        suffixIcon: IconButton(
+                          onPressed: () {},
+                          icon: const Icon(Icons.sentiment_satisfied_alt_outlined, color: Colors.grey, size: 22),
+                        ),
                       ),
                     ),
                   ),
@@ -409,13 +443,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   GestureDetector(
                     onTap: _sendMessage,
                     child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF8B5A2B), // Brown background matching message bubbles
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: primaryPeach,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.send, color: Colors.white, size: 18),
+                      child: Transform.rotate(
+                        angle: -0.5,
+                        child: const Icon(Icons.send, color: Colors.white, size: 18),
+                      ),
                     ),
                   ),
                 ],

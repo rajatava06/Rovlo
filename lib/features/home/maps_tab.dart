@@ -17,6 +17,9 @@ class _MapsTabState extends State<MapsTab> {
   double _zoom = 1.0;
   Traveler? _selectedTraveler;
   String _mapStyle = 'Standard'; // Standard, Satellite, Terrain
+  bool _ghostMode = false;
+  bool _askedLocation = false;
+  bool _locationAllowed = false;
 
   // Coordinates on our mock map canvas
   final List<MapPin> _pins = [
@@ -57,11 +60,55 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   void _recenter() {
-    setState(() {
-      _mapOffset = const Offset(-50, -50);
-      _zoom = 1.0;
-      _selectedTraveler = null;
-    });
+    if (!_askedLocation) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Rovlo wants to use your location'),
+          content: const Text('Allow Rovlo to access this device\'s location to show nearby travelers on the map.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _askedLocation = true;
+                  _locationAllowed = false;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Location permission denied. Map cannot show your current position.')),
+                );
+              },
+              child: const Text('Don\'t Allow'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _askedLocation = true;
+                  _locationAllowed = true;
+                  _mapOffset = const Offset(-50, -50);
+                  _zoom = 1.0;
+                  _selectedTraveler = null;
+                });
+              },
+              child: const Text('Allow'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (!_locationAllowed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission denied. Map cannot show your current position.')),
+        );
+      } else {
+        setState(() {
+          _mapOffset = const Offset(-50, -50);
+          _zoom = 1.0;
+          _selectedTraveler = null;
+        });
+      }
+    }
   }
 
   @override
@@ -266,6 +313,43 @@ class _MapsTabState extends State<MapsTab> {
                             ? Icons.satellite_outlined
                             : Icons.terrain,
                     color: primaryPeach,
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Ghost Mode Toggle
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _ghostMode = !_ghostMode;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      duration: const Duration(seconds: 2),
+                      content: Text(_ghostMode 
+                          ? 'Ghost Mode enabled: Your location is now hidden from other travelers.' 
+                          : 'Ghost Mode disabled: You are visible to nearby travelers.'),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _ghostMode ? (isDark ? Colors.grey.shade800 : Colors.grey.shade400) : cardColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      )
+                    ],
+                  ),
+                  child: Icon(
+                    _ghostMode ? Icons.visibility_off : Icons.visibility,
+                    color: _ghostMode ? Colors.white : primaryPeach,
                     size: 20,
                   ),
                 ),

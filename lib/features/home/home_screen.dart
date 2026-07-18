@@ -7,7 +7,6 @@ import '../../providers/auth_provider.dart';
 import 'explore_tab.dart';
 import 'profile_tab.dart';
 import 'maps_tab.dart';
-import 'matches_tab.dart';
 import 'chats_tab.dart';
 
 /// Main authenticated shell with a custom 5-tab bottom navigation bar.
@@ -36,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required IconData selectedIcon,
     required String label,
     bool isMiddle = false,
+    bool showDot = false,
   }) {
     final isSelected = _index == index;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -99,10 +99,49 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected ? selectedIcon : icon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 24,
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? activeColor.withValues(alpha: 0.15) : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: activeColor.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        )
+                      ]
+                    : null,
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    isSelected ? selectedIcon : icon,
+                    color: isSelected ? activeColor : inactiveColor,
+                    size: 24,
+                  ),
+                  if (showDot)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.primaryVibrantDark : AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? AppColors.darkSurface : Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -123,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final tabs = [
       const MapsTab(),
-      const MatchesTab(),
+      const _HotComingSoon(),
       const ExploreTab(),
       const ChatsTab(),
       const ProfileTab(),
@@ -132,19 +171,23 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
-        child: KeyedSubtree(
-          key: ValueKey(_index),
-          child: tabs[_index],
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+          child: KeyedSubtree(
+            key: ValueKey(_index),
+            child: tabs[_index],
+          ),
         ),
       ),
       bottomNavigationBar: Container(
-        height: 76,
+        height: 88,
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : Colors.white,
           boxShadow: [
@@ -169,9 +212,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 _buildNavItem(
                   index: 1,
-                  icon: Icons.favorite_border,
-                  selectedIcon: Icons.favorite,
-                  label: 'Matches',
+                  icon: Icons.whatshot_outlined,
+                  selectedIcon: Icons.whatshot,
+                  label: 'Hot',
                 ),
                 // Discover (Highlighted)
                 Expanded(
@@ -188,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.chat_bubble_outline,
                   selectedIcon: Icons.chat_bubble,
                   label: 'Chats',
+                  showDot: true, // dot indicator for new messages
                 ),
                 _buildNavItem(
                   index: 4,
@@ -197,6 +241,56 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HotComingSoon extends StatelessWidget {
+  const _HotComingSoon();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: primaryPeach.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.whatshot, color: primaryPeach, size: 64),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Hot Profiles',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Instant trending matches and hot explorer recommendations are coming soon!',
+                style: TextStyle(
+                  color: context.rovlo.textSecondary,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),

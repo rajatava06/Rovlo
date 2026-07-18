@@ -53,7 +53,7 @@ class WelcomeScreen extends StatelessWidget {
                     .fadeIn(duration: 600.ms, delay: 700.ms)
                     .slideY(begin: 0.4, curve: Curves.easeOutCubic),
                 const SizedBox(height: 14),
-                 _SignInButton()
+                _SignInButton()
                     .animate()
                     .fadeIn(duration: 800.ms, delay: 850.ms)
                     .scaleXY(begin: 0.9, end: 1.0, curve: Curves.easeOutBack)
@@ -103,9 +103,11 @@ class _SignInButton extends StatelessWidget {
           arguments: const SocialAuthArgs(isSignIn: true),
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
+          foregroundColor: const Color.fromARGB(0, 255, 255, 255),
           backgroundColor: Colors.transparent, // Fully transparent
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.35), width: 1.2), // Transparent border
+          side: BorderSide(
+              color: Colors.white.withValues(alpha: 0.35),
+              width: 1.2), // Transparent border
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
