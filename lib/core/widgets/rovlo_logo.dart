@@ -3,8 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 
-/// The "Rovlo" wordmark. Optionally rendered with a gradient shader (used over
-/// the video/gradient hero) or a solid colour (used in app bars).
+/// The Rovlo brand logo. Shows the "R" icon mark alongside the "Rovlo."
+/// wordmark. Optionally rendered with a gradient shader (used over the
+/// video/gradient hero) or a solid colour (used in app bars).
 class RovloLogo extends StatelessWidget {
   const RovloLogo({
     super.key,
@@ -12,12 +13,14 @@ class RovloLogo extends StatelessWidget {
     this.gradient = true,
     this.color,
     this.showDot = true,
+    this.showIcon = true,
   });
 
   final double fontSize;
   final bool gradient;
   final Color? color;
   final bool showDot;
+  final bool showIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +45,27 @@ class RovloLogo extends StatelessWidget {
       ),
     );
 
-    if (!gradient) return text;
+    final logoRow = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (showIcon) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(fontSize * 0.18),
+            child: Image.asset(
+              'assets/images/rovlo_logo.jpg',
+              width: fontSize * 0.85,
+              height: fontSize * 0.85,
+              fit: BoxFit.contain,
+            ),
+          ),
+          SizedBox(width: fontSize * 0.18),
+        ],
+        text,
+      ],
+    );
+
+    if (!gradient) return logoRow;
 
     return ShaderMask(
       shaderCallback: (bounds) => const LinearGradient(
@@ -50,7 +73,7 @@ class RovloLogo extends StatelessWidget {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(bounds),
-      child: text,
+      child: logoRow,
     );
   }
 }

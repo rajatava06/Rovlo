@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/traveler.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import 'traveler_profile_screen.dart';
 
 class ChatRoomArgs {
@@ -27,7 +30,6 @@ class ChatRoomScreen extends StatefulWidget {
 }
 
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
-  final List<_Message> _messages = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _showSafetyBanner = true;
@@ -35,24 +37,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   @override
   void initState() {
     super.initState();
-    // Default initial mock messages
-    _messages.addAll([
-      _Message(
-        text: 'Hey! I saw you\'re also going to be in Shinjuku for Halloween. Want to grab ramen?',
-        isMe: false,
-        time: '2:14 PM',
-      ),
-      _Message(
-        text: 'That sounds amazing! I\'ve been dying to try Ichiran or maybe something more local. Do you have a favorite spot?',
-        isMe: true,
-        time: '2:15 PM',
-      ),
-      _Message(
-        text: 'I actually know a hidden gem in Golden Gai that\'s much better than the chains. I\'ll send you the location! 🍜',
-        isMe: false,
-        time: '2:16 PM',
-      ),
-    ]);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<ChatProvider>(context, listen: false).markAsRead(widget.args.name);
+    });
   }
 
   @override
@@ -66,41 +53,21 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
-    setState(() {
-      _messages.add(_Message(
-        text: text,
-        isMe: true,
-        time: '${TimeOfDay.now().hour}:${TimeOfDay.now().minute.toString().padLeft(2, '0')} ${TimeOfDay.now().period == DayPeriod.am ? 'AM' : 'PM'}',
-      ));
-      _textController.clear();
-    });
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    chatProvider.sendMessage(widget.args.name, text, authProvider.currentUser);
+    _textController.clear();
 
     // Auto scroll to bottom
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    });
-
-    // Simulated reply after a delay
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(_Message(
-          text: 'Awesome, looking forward to meeting up! Let\'s finalize coordinates closer to the date.',
-          isMe: false,
-          time: '${TimeOfDay.now().hour}:${TimeOfDay.now().minute.toString().padLeft(2, '0')} ${TimeOfDay.now().period == DayPeriod.am ? 'AM' : 'PM'}',
-        ));
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
-      });
+      }
     });
   }
 
@@ -109,6 +76,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
     final textSecColor = context.rovlo.textSecondary;
+
+    final chatProvider = context.watch<ChatProvider>();
+    final conv = chatProvider.getConversation(widget.args.name);
+    final messages = conv?.messages ?? [];
 
     return Scaffold(
       appBar: AppBar(
@@ -149,51 +120,41 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 backgroundImage: NetworkImage(widget.args.imageUrl),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            widget.args.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (widget.args.isVerified) ...[
-                          const SizedBox(width: 4),
-                          const Icon(Icons.verified, color: AppColors.primary, size: 14),
-                        ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        widget.args.name,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      if (widget.args.isVerified) ...[
+                        const SizedBox(width: 4),
+                        const Icon(Icons.verified, color: Colors.blue, size: 14),
                       ],
-                    ),
-                    const Text(
-                      'Active now',
-                      style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.normal),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                  const Text(
+                    'Active now',
+                    style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w500),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.videocam_outlined),
             onPressed: () {},
-            icon: const Icon(Icons.call_outlined),
           ),
           IconButton(
+            icon: const Icon(Icons.call_outlined),
             onPressed: () {},
-            icon: const Icon(Icons.info_outline),
           ),
         ],
-        elevation: 0.5,
-        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
       ),
       body: Column(
         children: [
@@ -320,7 +281,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 ),
 
                 // Bubbles List
-                ..._messages.map((msg) {
+                ...messages.map((msg) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 16),
                     child: Row(
@@ -367,7 +328,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    msg.time,
+                                    msg.timeFormatted,
                                     style: TextStyle(
                                       color: textSecColor.withValues(alpha: 0.6),
                                       fontSize: 10,
@@ -390,52 +351,42 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
           ),
 
-          // ── Bottom Message Composer Bar ──────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurface : Colors.white,
-              border: Border(
-                top: BorderSide(
-                  color: isDark ? Colors.white10 : Colors.black12,
-                ),
-              ),
-            ),
-            child: SafeArea(
+          // ── Bottom Message Input Field ───────────────────────────────────────
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(Icons.add, color: isDark ? Colors.white70 : Colors.black54),
-                  ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(Icons.image_outlined, color: isDark ? Colors.white70 : Colors.black54),
-                  ),
                   Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        filled: true,
-                        fillColor: isDark ? AppColors.darkCard : Colors.grey.shade100,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        suffixIcon: IconButton(
-                          onPressed: () {},
-                          icon: const Icon(Icons.sentiment_satisfied_alt_outlined, color: Colors.grey, size: 22),
-                        ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.darkCard : const Color(0xFFF2F2F2),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.sentiment_satisfied_alt_outlined, color: textSecColor),
+                            onPressed: () {},
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _textController,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: const InputDecoration(
+                                hintText: 'Type a message...',
+                                filled: false,
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(vertical: 10),
+                              ),
+                              onSubmitted: (_) => _sendMessage(),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.attach_file, color: textSecColor),
+                            onPressed: () {},
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -463,16 +414,4 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       ),
     );
   }
-}
-
-class _Message {
-  final String text;
-  final bool isMe;
-  final String time;
-
-  const _Message({
-    required this.text,
-    required this.isMe,
-    required this.time,
-  });
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/chat_provider.dart';
 import 'chat_room_screen.dart';
 
 class ChatsTab extends StatelessWidget {
@@ -14,79 +16,36 @@ class ChatsTab extends StatelessWidget {
     final cardColor = context.rovlo.card;
     final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
 
-    // Mock data matching the screenshot
+    final chatProvider = context.watch<ChatProvider>();
+    final conversations = chatProvider.conversations;
+
+    // Filter conversations for the message list (all of them since they are initialized with at least one message)
+    // Dynamic matches: we can show travelers who have 0 or 1 message as "new matches" for demonstration
     final List<_NewMatch> newMatches = [
-      _NewMatch(
+      const _NewMatch(
         name: 'Elena',
         imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
         isVerified: true,
       ),
-      _NewMatch(
+      const _NewMatch(
         name: 'Marcus',
         imageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80',
         isVerified: false,
       ),
-      _NewMatch(
+      const _NewMatch(
         name: 'Sora',
         imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
         isVerified: true,
       ),
-      _NewMatch(
+      const _NewMatch(
         name: 'Julian',
         imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
         isVerified: true,
       ),
     ];
 
-    final List<_MessagePreview> messages = [
-      _MessagePreview(
-        name: 'Elena Rossi',
-        imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-        snippet: 'Looking forward to Tokyo...',
-        time: '2m ago',
-        isVerified: true,
-        unread: true,
-        active: true,
-      ),
-      _MessagePreview(
-        name: 'Marcus Chen',
-        imageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80',
-        snippet: 'That café in Omotesando loo...',
-        time: '15m ago',
-        isVerified: false,
-        unread: false,
-        active: false,
-      ),
-      _MessagePreview(
-        name: 'Sora Tanaka',
-        imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-        snippet: 'Did you check the itinerary I ...',
-        time: '1h ago',
-        isVerified: true,
-        unread: false,
-        active: false,
-      ),
-      _MessagePreview(
-        name: 'Julian Weber',
-        imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
-        snippet: 'Haha, that\'s so true about th...',
-        time: '3h ago',
-        isVerified: true,
-        unread: false,
-        active: false,
-      ),
-      _MessagePreview(
-        name: 'Maya Patel',
-        imageUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150&q=80',
-        snippet: 'Can\'t wait for our trip! See yo...',
-        time: 'Yesterday',
-        isVerified: false,
-        unread: false,
-        active: false,
-      ),
-    ];
-
     void openChatRoom(String name, String imageUrl, bool isVerified) {
+      chatProvider.markAsRead(name);
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -213,11 +172,15 @@ class ChatsTab extends StatelessWidget {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: messages.length,
+                itemCount: conversations.length,
                 itemBuilder: (context, index) {
-                  final msg = messages[index];
+                  final conv = conversations[index];
+                  final lastMsg = conv.lastMessage;
+                  final timeText = lastMsg != null ? lastMsg.timeFormatted : '';
+                  final snippetText = lastMsg != null ? lastMsg.text : 'Start chatting!';
+
                   return GestureDetector(
-                    onTap: () => openChatRoom(msg.name, msg.imageUrl, msg.isVerified),
+                    onTap: () => openChatRoom(conv.contactName, conv.contactImageUrl, conv.isVerified),
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
@@ -234,9 +197,9 @@ class ChatsTab extends StatelessWidget {
                             children: [
                               CircleAvatar(
                                 radius: 28,
-                                backgroundImage: NetworkImage(msg.imageUrl),
+                                backgroundImage: NetworkImage(conv.contactImageUrl),
                               ),
-                              if (msg.active)
+                              if (conv.contactName != 'Rovlo')
                                 Positioned(
                                   right: 0,
                                   bottom: 0,
@@ -263,13 +226,13 @@ class ChatsTab extends StatelessWidget {
                                 Row(
                                   children: [
                                     Text(
-                                      msg.name,
+                                      conv.contactName,
                                       style: const TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    if (msg.isVerified) ...[
+                                    if (conv.isVerified) ...[
                                       const SizedBox(width: 4),
                                       const Icon(Icons.verified, color: AppColors.primary, size: 14),
                                     ],
@@ -277,13 +240,13 @@ class ChatsTab extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  msg.snippet,
+                                  snippetText,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: msg.unread
+                                    color: conv.hasUnread
                                         ? (isDark ? Colors.white : AppColors.lightTextPrimary)
                                         : textSecColor,
-                                    fontWeight: msg.unread ? FontWeight.bold : FontWeight.normal,
+                                    fontWeight: conv.hasUnread ? FontWeight.bold : FontWeight.normal,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -294,14 +257,14 @@ class ChatsTab extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                msg.time,
+                                timeText,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: textSecColor.withValues(alpha: 0.6),
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              if (msg.unread)
+                              if (conv.hasUnread)
                                 Container(
                                   width: 8,
                                   height: 8,
@@ -335,25 +298,5 @@ class _NewMatch {
     required this.name,
     required this.imageUrl,
     required this.isVerified,
-  });
-}
-
-class _MessagePreview {
-  final String name;
-  final String imageUrl;
-  final String snippet;
-  final String time;
-  final bool isVerified;
-  final bool unread;
-  final bool active;
-
-  const _MessagePreview({
-    required this.name,
-    required this.imageUrl,
-    required this.snippet,
-    required this.time,
-    required this.isVerified,
-    required this.unread,
-    required this.active,
   });
 }

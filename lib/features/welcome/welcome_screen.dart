@@ -103,11 +103,12 @@ class _SignInButton extends StatelessWidget {
           arguments: const SocialAuthArgs(isSignIn: true),
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color.fromARGB(0, 255, 255, 255),
-          backgroundColor: Colors.transparent, // Fully transparent
+          foregroundColor: const Color.fromARGB(255, 255, 255, 255),
+          backgroundColor: Colors.transparent,
           side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.35),
-              width: 1.2), // Transparent border
+              color: const Color.fromARGB(4, 255, 255, 255)
+                  .withValues(alpha: 0.35),
+              width: 1.2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

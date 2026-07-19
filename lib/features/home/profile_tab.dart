@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_colors.dart';
@@ -12,8 +14,22 @@ import '../profile/verify_screen.dart';
 import '../profile/rovlo_plus_screen.dart';
 import '../profile/emergency_contacts_screen.dart';
 
-class ProfileTab extends StatelessWidget {
+class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
+
+  @override
+  State<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<ProfileTab> {
+  final PageController _pageController = PageController();
+  int _currentPhotoPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   void _showEditProfile(BuildContext context, AuthProvider provider, AppUser user) {
     final nameController = TextEditingController(text: user.name ?? '');
@@ -76,9 +92,11 @@ class ProfileTab extends StatelessWidget {
                             shape: BoxShape.circle,
                             border: Border.all(color: primaryPeach, width: 2),
                             image: DecorationImage(
-                              image: NetworkImage(selectedAvatar.isNotEmpty
-                                  ? selectedAvatar
-                                  : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'),
+                              image: (selectedAvatar.isEmpty || selectedAvatar.startsWith('http'))
+                                  ? NetworkImage(selectedAvatar.isNotEmpty
+                                      ? selectedAvatar
+                                      : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80')
+                                  : FileImage(File(selectedAvatar)) as ImageProvider,
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -89,47 +107,38 @@ class ProfileTab extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               OutlinedButton.icon(
-                                onPressed: () {
-                                  // Mock gallery upload
-                                  setModalState(() {
-                                    selectedAvatar = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80';
-                                  });
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('📸 Selected image from device gallery: profile_photo.jpeg')),
-                                  );
+                                onPressed: () async {
+                                  final ImagePicker picker = ImagePicker();
+                                  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                                  if (image != null) {
+                                    setModalState(() {
+                                      selectedAvatar = image.path;
+                                    });
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('📸 Selected image from device gallery')),
+                                      );
+                                    }
+                                  }
                                 },
                                 icon: const Icon(Icons.photo_library_outlined, size: 18),
                                 label: const Text('Choose from Gallery'),
                               ),
                               const SizedBox(height: 8),
                               OutlinedButton.icon(
-                                onPressed: () {
-                                  // Mock take photo
-                                  showDialog(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: const Text('Camera'),
-                                      content: const Text('Simulated Camera View. Capture a selfie!'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(ctx),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        FilledButton(
-                                          onPressed: () {
-                                            Navigator.pop(ctx);
-                                            setModalState(() {
-                                              selectedAvatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80';
-                                            });
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('📸 Captured selfie successfully!')),
-                                            );
-                                          },
-                                          child: const Text('Capture'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
+                                onPressed: () async {
+                                  final ImagePicker picker = ImagePicker();
+                                  final XFile? image = await picker.pickImage(source: ImageSource.camera);
+                                  if (image != null) {
+                                    setModalState(() {
+                                      selectedAvatar = image.path;
+                                    });
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('📸 Captured photo from camera!')),
+                                      );
+                                    }
+                                  }
                                 },
                                 icon: const Icon(Icons.camera_alt_outlined, size: 18),
                                 label: const Text('Take Photo'),
@@ -170,10 +179,16 @@ class ProfileTab extends StatelessWidget {
                       height: 50,
                       child: ElevatedButton(
                         onPressed: () async {
+                          final photos = List<String>.from(user.profilePhotos);
+                          if (selectedAvatar != user.photoUrl) {
+                            photos.remove(selectedAvatar);
+                            photos.insert(0, selectedAvatar);
+                          }
                           await provider.updateProfile(
                             name: nameController.text,
                             bio: bioController.text,
                             photoUrl: selectedAvatar,
+                            profilePhotos: photos,
                             homeBase: homeBaseController.text.trim().isNotEmpty
                                 ? homeBaseController.text.trim()
                                 : null,
@@ -268,6 +283,90 @@ class ProfileTab extends StatelessWidget {
     );
   }
 
+  void _handlePhotoAction(BuildContext context, AuthProvider provider, AppUser user, String action) async {
+    final ImagePicker picker = ImagePicker();
+    
+    if (action == 'gallery') {
+      final photos = List<String>.from(user.profilePhotos);
+      if (photos.length >= 5) return;
+      
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        photos.add(image.path);
+        await provider.updateProfile(
+          profilePhotos: photos,
+          photoUrl: user.photoUrl ?? image.path,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('📸 Added photo from gallery!')),
+          );
+        }
+      }
+    } else if (action == 'camera') {
+      final photos = List<String>.from(user.profilePhotos);
+      if (photos.length >= 5) return;
+      
+      final XFile? image = await picker.pickImage(source: ImageSource.camera);
+      if (image != null) {
+        photos.add(image.path);
+        await provider.updateProfile(
+          profilePhotos: photos,
+          photoUrl: user.photoUrl ?? image.path,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('📸 Captured photo from camera!')),
+          );
+        }
+      }
+    } else if (action == 'pin') {
+      final photos = List<String>.from(user.effectivePhotos);
+      if (photos.isEmpty || _currentPhotoPage >= photos.length) return;
+      
+      final pinned = photos.removeAt(_currentPhotoPage);
+      photos.insert(0, pinned);
+      
+      provider.updateProfile(
+        profilePhotos: photos,
+        photoUrl: pinned,
+      );
+      
+      setState(() {
+        _currentPhotoPage = 0;
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(0);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('📌 Pinned photo as primary profile picture!')),
+      );
+    } else if (action == 'delete') {
+      final photos = List<String>.from(user.effectivePhotos);
+      if (photos.isEmpty || _currentPhotoPage >= photos.length) return;
+      
+      photos.removeAt(_currentPhotoPage);
+      final newPrimary = photos.isNotEmpty ? photos.first : '';
+      
+      provider.updateProfile(
+        profilePhotos: photos,
+        photoUrl: newPrimary.isNotEmpty ? newPrimary : null,
+      );
+      
+      setState(() {
+        if (_currentPhotoPage >= photos.length && _currentPhotoPage > 0) {
+          _currentPhotoPage = photos.length - 1;
+        }
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(_currentPhotoPage);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('🗑️ Deleted photo successfully!')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AuthProvider>();
@@ -332,7 +431,247 @@ class ProfileTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _Header(user: user).animate().fadeIn().slideY(begin: 0.1),
+
+          // ── Swipable Photo Carousel Header (Matches Card style) ──
+          SizedBox(
+            height: 340,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // PageView of photos
+                  if (user.effectivePhotos.isEmpty)
+                    Container(
+                      color: isDark ? AppColors.darkCard : Colors.grey.shade200,
+                      child: Center(
+                        child: Icon(Icons.person, size: 80, color: primaryPeach.withValues(alpha: 0.5)),
+                      ),
+                    )
+                  else
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: user.effectivePhotos.length,
+                      onPageChanged: (page) {
+                        setState(() {
+                          _currentPhotoPage = page;
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        final photo = user.effectivePhotos[index];
+                        if (photo.startsWith('http')) {
+                          return Image.network(
+                            photo,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.shade300,
+                              child: const Icon(Icons.broken_image, size: 50),
+                            ),
+                          );
+                        } else {
+                          return Image.file(
+                            File(photo),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.shade300,
+                              child: const Icon(Icons.broken_image, size: 50),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+
+                  // Shadow Overlay (Bottom and Top)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.4),
+                            Colors.transparent,
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.6),
+                          ],
+                          stops: const [0.0, 0.25, 0.7, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Horizontal Indicators at top
+                  if (user.effectivePhotos.length > 1)
+                    Positioned(
+                      top: 16,
+                      left: 20,
+                      right: 20,
+                      child: Row(
+                        children: List.generate(user.effectivePhotos.length, (i) {
+                          return Expanded(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color: _currentPhotoPage == i
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+
+                  // Name & Info overlay at bottom left
+                  Positioned(
+                    bottom: 20,
+                    left: 20,
+                    right: 80, // Leave space for completion percentage on right
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                user.displayName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (user.isVerified) ...[
+                              const SizedBox(width: 6),
+                              const Icon(Icons.verified, color: Colors.blue, size: 20),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          user.email ?? user.phoneNumber ?? '',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (user.gender != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            user.gender!,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // Completion percentage overlay (bottom right)
+                  Positioned(
+                    bottom: 20,
+                    right: 20,
+                    child: SizedBox(
+                      width: 50,
+                      height: 50,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: CustomPaint(
+                              painter: _CompletionRingPainter(
+                                progress: user.profileCompletionPercent,
+                                color: Colors.white,
+                                bgColor: Colors.white.withValues(alpha: 0.2),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${(user.profileCompletionPercent * 100).round()}%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Top right: Action popup three-dot menu button
+                  Positioned(
+                    top: 24,
+                    right: 12,
+                    child: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
+                      color: isDark ? AppColors.darkCard : Colors.white,
+                      onSelected: (value) => _handlePhotoAction(context, provider, user, value),
+                      itemBuilder: (context) {
+                        final count = user.effectivePhotos.length;
+                        return [
+                          if (count < 5) ...[
+                            const PopupMenuItem(
+                              value: 'gallery',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.photo_library_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Add from Gallery'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'camera',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.camera_alt_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Take Photo'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (count > 0) ...[
+                            const PopupMenuItem(
+                              value: 'pin',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.push_pin_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Pin as Primary'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (count > 0) ...[
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Delete Photo', style: TextStyle(color: Colors.red)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ];
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ).animate().fadeIn().slideY(begin: 0.1),
           const SizedBox(height: 20),
 
           // DOB & Home Base info
@@ -596,168 +935,6 @@ class ProfileTab extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.user});
-  final AppUser user;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final gradientColors = isDark ? AppColors.sunsetGradient : AppColors.brandGradient;
-    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
-    final completionPercent = user.profileCompletionPercent;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-        gradient: LinearGradient(
-          colors: gradientColors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Avatar with completion ring
-          SizedBox(
-            width: 72,
-            height: 72,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Completion circle
-                SizedBox(
-                  width: 72,
-                  height: 72,
-                  child: CustomPaint(
-                    painter: _CompletionRingPainter(
-                      progress: completionPercent,
-                      color: Colors.white,
-                      bgColor: Colors.white.withValues(alpha: 0.2),
-                    ),
-                  ),
-                ),
-                // Avatar
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.25),
-                    image: user.photoUrl != null && user.photoUrl!.isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(user.photoUrl!),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: user.photoUrl != null && user.photoUrl!.isNotEmpty
-                      ? null
-                      : Center(
-                          child: Text(
-                            user.initials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                ),
-                // Completion percentage label
-                Positioned(
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: primaryPeach,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${(completionPercent * 100).round()}%',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        user.displayName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (user.isVerified) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.verified, color: Colors.white, size: 18),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  user.email ?? user.phoneNumber ?? '',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 13,
-                  ),
-                ),
-                if (user.gender != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      user.gender!,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                if (user.subscriptionTier != 'free')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade700,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        user.subscriptionTier == 'plus199' ? '⭐ Plus' : '👑 Premium',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Custom painter for the circular completion ring around the avatar.
 class _CompletionRingPainter extends CustomPainter {
   final double progress;
@@ -867,3 +1044,5 @@ class _MenuTile extends StatelessWidget {
     );
   }
 }
+
+

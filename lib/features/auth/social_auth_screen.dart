@@ -46,15 +46,72 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
   }
 
   Future<void> _authenticate(_Provider provider) async {
+    if (provider == _Provider.google) {
+      // Real Google Sign-In — triggers the native account picker
+      setState(() {
+        _inFlight = provider;
+        _error = null;
+      });
+      final auth = context.read<AuthProvider>();
+      try {
+        final user = await auth.signInWithGoogle();
+        if (!mounted) return;
+        if (user == null) {
+          // User cancelled the picker
+          setState(() => _inFlight = null);
+          return;
+        }
+        _routeAfterAuth(user);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _inFlight = null;
+          _error = e.toString();
+        });
+      }
+      return;
+    }
+
+    if (provider == _Provider.demo) {
+      // Demo Sign-In
+      setState(() {
+        _inFlight = provider;
+        _error = null;
+      });
+      final auth = context.read<AuthProvider>();
+      try {
+        final user = await auth.signInDemo();
+        if (!mounted || user == null) return;
+        _routeAfterAuth(user);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _inFlight = null;
+          _error = e.toString();
+        });
+      }
+      return;
+    }
+
+    // Apple: still uses the simulated consent dialog
+    final credentials = await _showSimulatedOAuthConsent(context);
+    if (credentials == null) {
+      setState(() {
+        _inFlight = null;
+      });
+      return;
+    }
+
     setState(() {
       _inFlight = provider;
       _error = null;
     });
     final auth = context.read<AuthProvider>();
     try {
-      final user = provider == _Provider.google
-          ? await auth.signInWithGoogle()
-          : await auth.signInWithApple();
+      final user = await auth.signInWithApple(
+        email: credentials['email'],
+        name: credentials['name'],
+      );
       if (!mounted || user == null) return;
       _routeAfterAuth(user);
     } catch (e) {
@@ -64,6 +121,149 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
         _error = e.toString();
       });
     }
+  }
+
+  Future<Map<String, String>?> _showSimulatedOAuthConsent(BuildContext context) {
+    final emailController = TextEditingController();
+    final nameController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+        final titleColor = isDark ? Colors.white : Colors.black87;
+        
+        return Center(
+          child: Container(
+            width: 340,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 15, spreadRadius: 3),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Address Bar Simulation
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : Colors.black12,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock, size: 12, color: Colors.green.shade600),
+                        const SizedBox(width: 6),
+                        const Expanded(
+                          child: Text(
+                            'https://appleid.apple.com/auth',
+                            style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.grey),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  // Icon header
+                  Icon(
+                    Icons.apple,
+                    size: 48,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  Text(
+                    'Sign in with Apple',
+                    style: TextStyle(
+                      color: titleColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'to continue to Rovlo App',
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.black54,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Inputs
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: titleColor),
+                    decoration: InputDecoration(
+                      hintText: 'Apple ID Email',
+                      hintStyle: const TextStyle(color: Colors.grey),
+                      prefixIcon: const Icon(Icons.email_outlined, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameController,
+                    style: TextStyle(color: titleColor),
+                    decoration: InputDecoration(
+                      hintText: 'Display Name (Optional)',
+                      hintStyle: const TextStyle(color: Colors.grey),
+                      prefixIcon: const Icon(Icons.person_outline, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          final email = emailController.text.trim();
+                          if (email.isEmpty || !email.contains('@')) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(content: Text('Please enter a valid email address')),
+                            );
+                            return;
+                          }
+                          Navigator.pop(ctx, {
+                            'email': email,
+                            'name': nameController.text.trim(),
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDark ? Colors.white : Colors.black87,
+                          foregroundColor: isDark ? Colors.black87 : Colors.white,
+                        ),
+                        child: const Text('Continue'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _routeAfterAuth(AppUser user) {
@@ -140,13 +340,54 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                         : () => _authenticate(_Provider.google),
                   ).animate(delay: 300.ms).fadeIn().slideY(begin: 0.3),
                   const SizedBox(height: 14),
-                  if (_appleAvailable)
+                  if (_appleAvailable) ...[
                     SocialButton.apple(
                       loading: _inFlight == _Provider.apple,
                       onPressed: _inFlight != null
                           ? null
                           : () => _authenticate(_Provider.apple),
                     ).animate(delay: 380.ms).fadeIn().slideY(begin: 0.3),
+                    const SizedBox(height: 14),
+                  ],
+                  // Demo Sign-In Option
+                  OutlinedButton(
+                    onPressed: _inFlight != null
+                        ? null
+                        : () => _authenticate(_Provider.demo),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white38, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(double.infinity, 54),
+                    ),
+                    child: _inFlight == _Provider.demo
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.developer_mode_outlined, size: 20),
+                              SizedBox(width: 10),
+                              Text(
+                                'Explore with Demo Account',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ).animate(delay: 450.ms).fadeIn().slideY(begin: 0.3),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     _ErrorBanner(message: _error!),
@@ -169,7 +410,7 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
   }
 }
 
-enum _Provider { google, apple }
+enum _Provider { google, apple, demo }
 
 class _ErrorBanner extends StatelessWidget {
   const _ErrorBanner({required this.message});

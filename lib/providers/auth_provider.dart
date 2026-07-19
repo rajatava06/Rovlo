@@ -80,18 +80,38 @@ class AuthProvider extends ChangeNotifier {
   // Sign in (existing users): straight to social auth.
   // ---------------------------------------------------------------------------
 
-  Future<AppUser?> signInWithGoogle() => _social(_auth.signInWithGoogle,
-      AuthMethod.google);
-  Future<AppUser?> signInWithApple() =>
-      _social(_auth.signInWithApple, AuthMethod.apple);
+  Future<AppUser?> signInWithGoogle() => _social(
+        () => _auth.signInWithGoogle(),
+        AuthMethod.google,
+      );
+  Future<AppUser?> signInWithApple({String? email, String? name}) => _social(
+        () async => _auth.signInWithApple(email: email, name: name),
+        AuthMethod.apple,
+      );
+
+  Future<AppUser?> signInDemo() => _social(
+        () async {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          return const SocialAuthResult(
+            email: 'demo.traveler@rovlo.com',
+            name: 'Demo Traveler',
+            photoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Demo',
+          );
+        },
+        AuthMethod.google,
+      );
 
   Future<AppUser?> _social(
-    Future<SocialAuthResult> Function() run,
+    Future<SocialAuthResult?> Function() run,
     AuthMethod method,
   ) async {
     _setBusy(true);
     try {
       final result = await run();
+      if (result == null) {
+        // User cancelled the sign-in picker
+        return null;
+      }
       final user = await _auth.resolveOrCreate(
         email: result.email,
         name: result.name,
@@ -216,6 +236,7 @@ class AuthProvider extends ChangeNotifier {
     String? photoUrl,
     String? dob,
     String? homeBase,
+    List<String>? profilePhotos,
   }) async {
     final user = _currentUser;
     if (user == null) return;
@@ -225,6 +246,7 @@ class AuthProvider extends ChangeNotifier {
       photoUrl: photoUrl ?? user.photoUrl,
       dob: dob ?? user.dob,
       homeBase: homeBase ?? user.homeBase,
+      profilePhotos: profilePhotos ?? user.profilePhotos,
     );
     await _auth.updateUser(updated);
     _currentUser = updated;
