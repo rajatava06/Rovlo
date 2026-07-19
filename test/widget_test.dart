@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:rovlo/app.dart';
 import 'package:rovlo/core/theme/theme_provider.dart';
+import 'package:rovlo/core/widgets/rovlo_loader.dart';
 import 'package:rovlo/core/widgets/rovlo_logo.dart';
 import 'package:rovlo/providers/auth_provider.dart';
 
@@ -14,7 +15,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('Welcome screen shows the Rovlo wordmark and CTAs',
+  testWidgets('Splash shows the branded loader, then Welcome CTAs appear',
       (tester) async {
     await tester.pumpWidget(
       MultiProvider(
@@ -26,8 +27,13 @@ void main() {
       ),
     );
 
-    // Let async providers + intro animations settle.
+    // Branded loading screen is up first.
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(RovloLoadingScreen), findsOneWidget);
+
+    // After the minimum splash time + fade, Welcome takes over.
     await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byType(RovloLogo), findsWidgets);
     expect(find.text('Create Account'), findsOneWidget);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme/app_theme.dart'; // context.rovlo extension
+import 'rovlo_loader.dart';
 
 /// Shared layout for the multi-step profile-setup screens: a progress bar,
 /// a title + subtitle, a body, and a pinned primary action at the bottom.
@@ -113,14 +114,7 @@ class OnboardingScaffold extends StatelessWidget {
                   onPressed:
                       (continueEnabled && !busy) ? onContinue : null,
                   child: busy
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
-                        )
+                      ? const RovloLoader(size: 26, trailColor: Colors.white)
                       : Text(continueLabel),
                 ),
               ),
