@@ -1,18 +1,17 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
-import 'animated_gradient_background.dart';
-import 'rovlo_logo.dart';
 
-/// Rovlo's signature loader.
+/// Rovlo's signature loader — the letter "R" drawn in one continuous stroke.
 ///
-/// Concept: the amber "." from the Rovlo wordmark becomes a tiny traveller
-/// orbiting a dashed route, pulling a gradient trail behind it — a journey
-/// in miniature. Use [RovloLoader] anywhere a spinner would go, and
-/// [RovloLoadingScreen] as the full-screen splash.
+/// A faint "R" track sits in place while a glowing amber dot traces over it,
+/// pulling a tapered brand-colour trail — like the Rovlo logo signing itself.
+/// Pure CustomPainter, no assets. Drop it anywhere a spinner would go:
+///
+///   const RovloLoader()                     // default 56px, teal trail
+///   const RovloLoader(size: 26, trailColor: Colors.white)  // inside buttons
 class RovloLoader extends StatefulWidget {
   const RovloLoader({
     super.key,
@@ -20,19 +19,14 @@ class RovloLoader extends StatefulWidget {
     this.trailColor = AppColors.primary,
     this.dotColor = AppColors.accent,
     this.trackColor,
-    this.dotOnly = false,
   });
 
   final double size;
   final Color trailColor;
   final Color dotColor;
 
-  /// Colour of the faint dashed "route". Defaults to a low-alpha trail colour.
+  /// Colour of the faint full-"R" guide. Defaults to a low-alpha trail colour.
   final Color? trackColor;
-
-  /// When true, draws only the orbiting glowing dot (no route, no trail).
-  /// Used at small sizes, e.g. as the animated "." of the wordmark.
-  final bool dotOnly;
 
   @override
   State<RovloLoader> createState() => _RovloLoaderState();
@@ -47,7 +41,7 @@ class _RovloLoaderState extends State<RovloLoader>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1600),
     )..repeat();
   }
 
@@ -65,13 +59,12 @@ class _RovloLoaderState extends State<RovloLoader>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) => CustomPaint(
-          painter: _RoutePainter(
+          painter: _RSignaturePainter(
             t: _controller.value,
             trailColor: widget.trailColor,
             dotColor: widget.dotColor,
-            trackColor: widget.trackColor ??
-                widget.trailColor.withValues(alpha: 0.18),
-            dotOnly: widget.dotOnly,
+            trackColor:
+                widget.trackColor ?? widget.trailColor.withValues(alpha: 0.16),
           ),
         ),
       ),
@@ -79,184 +72,117 @@ class _RovloLoaderState extends State<RovloLoader>
   }
 }
 
-class _RoutePainter extends CustomPainter {
-  _RoutePainter({
+class _RSignaturePainter extends CustomPainter {
+  _RSignaturePainter({
     required this.t,
     required this.trailColor,
     required this.dotColor,
     required this.trackColor,
-    required this.dotOnly,
   });
 
   final double t;
   final Color trailColor;
   final Color dotColor;
   final Color trackColor;
-  final bool dotOnly;
+
+  /// The "R", designed in a 100×100 box as ONE continuous stroke:
+  /// up the stem, around the bowl, then kick out the leg.
+  static Path _rPath(Size size) {
+    const inset = 10.0; // breathing room inside the 100-box
+    final s = size.shortestSide / 100.0;
+    final dx = (size.width - size.shortestSide) / 2;
+    final dy = (size.height - size.shortestSide) / 2;
+
+    Offset p(double x, double y) => Offset(dx + x * s, dy + y * s);
+
+    final path = Path()..moveTo(p(30, 100 - inset).dx, p(30, 100 - inset).dy);
+    path.lineTo(p(30, inset + 4).dx, p(30, inset + 4).dy); // stem up
+    path.cubicTo(
+      p(80, inset).dx, p(80, inset).dy, // bowl out to the right…
+      p(80, 52).dx, p(80, 52).dy,
+      p(30, 50).dx, p(30, 50).dy, // …and back to the stem
+    );
+    path.lineTo(p(74, 100 - inset).dx, p(74, 100 - inset).dy); // the leg
+    return path;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final stroke = size.shortestSide * 0.10;
-    final radius = size.shortestSide / 2 - stroke * 1.6;
-    final rect = Rect.fromCircle(center: center, radius: radius);
+    final path = _rPath(size);
+    final metric = path.computeMetrics().first;
+    final length = metric.length;
 
-    // Position of the travelling dot. Ease the rotation slightly so the dot
-    // "pushes off" and "glides" instead of moving robotically.
-    final eased = t - 0.06 * sin(2 * pi * t);
-    final head = 2 * pi * eased - pi / 2;
+    final trackStroke = size.shortestSide * 0.055;
+    final trailStroke = size.shortestSide * 0.085;
 
-    if (!dotOnly) {
-      // 1. Dashed route (the itinerary).
-      final trackPaint = Paint()
+    // 1. Faint guide "R" — always visible so the letterform reads instantly.
+    canvas.drawPath(
+      path,
+      Paint()
         ..color = trackColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke * 0.45
-        ..strokeCap = StrokeCap.round;
-      const dashes = 14;
-      for (var i = 0; i < dashes; i++) {
-        final start = (i / dashes) * 2 * pi;
-        canvas.drawArc(rect, start, (2 * pi / dashes) * 0.45, false, trackPaint);
-      }
-
-      // 2. Gradient trail: transparent tail -> solid brand teal at the head.
-      // The trail "breathes": longer mid-cycle, shorter at the ends.
-      final sweep = pi * 0.45 + pi * 0.55 * pow(sin(pi * t), 2);
-      final trailPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
+        ..strokeWidth = trackStroke
         ..strokeCap = StrokeCap.round
-        ..shader = SweepGradient(
-          startAngle: 0,
-          endAngle: sweep,
-          colors: [trailColor.withValues(alpha: 0), trailColor],
-          transform: GradientRotation(head - sweep),
-        ).createShader(rect);
-      canvas.drawArc(rect, head - sweep, sweep, false, trailPaint);
+        ..strokeJoin = StrokeJoin.round,
+    );
+
+    // 2. The moving trail. The head travels the full length plus one trail
+    // length, so the tail gracefully slides off the leg before the loop
+    // restarts — a complete "signature" every cycle.
+    final trailLen = length * 0.38;
+    final headDist = t * (length + trailLen);
+    final start = (headDist - trailLen).clamp(0.0, length);
+    final end = headDist.clamp(0.0, length);
+
+    if (end > start) {
+      // Taper: short overlapping segments with ramping alpha ≈ a comet tail.
+      const segments = 14;
+      final segLen = (end - start) / segments;
+      for (var i = 0; i < segments; i++) {
+        final alpha = (i + 1) / segments;
+        canvas.drawPath(
+          metric.extractPath(start + i * segLen, start + (i + 1) * segLen),
+          Paint()
+            ..color = trailColor.withValues(alpha: alpha)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = trailStroke * (0.55 + 0.45 * alpha)
+            ..strokeCap = StrokeCap.round,
+        );
+      }
     }
 
-    // 3. The traveller: a glowing amber dot with a gentle pulse.
-    final dotCenter =
-        center + Offset(cos(head), sin(head)) * (dotOnly ? radius * 0.9 : radius);
-    final pulse = 1 + 0.18 * sin(4 * pi * t);
-    final dotR = stroke * (dotOnly ? 1.6 : 0.95) * pulse;
+    // 3. The glowing amber pen-tip. It fades out while the tail finishes,
+    // then reappears at the foot of the stem for the next signature.
+    final dotFade =
+        headDist <= length ? 1.0 : (1 - (headDist - length) / trailLen);
+    if (dotFade <= 0) return;
 
-    final glowPaint = Paint()
-      ..color = dotColor.withValues(alpha: 0.45)
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, dotR * 0.9);
-    canvas.drawCircle(dotCenter, dotR * 1.8, glowPaint);
-    canvas.drawCircle(dotCenter, dotR, Paint()..color = dotColor);
+    final tangent = metric.getTangentForOffset(min(headDist, length));
+    if (tangent == null) return;
+
+    final pulse = 1 + 0.15 * sin(4 * pi * t);
+    final dotR = size.shortestSide * 0.075 * pulse;
+    final dotCenter = tangent.position;
+
+    canvas.drawCircle(
+      dotCenter,
+      dotR * 1.9,
+      Paint()
+        ..color = dotColor.withValues(alpha: 0.45 * dotFade)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, dotR),
+    );
+    canvas.drawCircle(
+      dotCenter,
+      dotR,
+      Paint()..color = dotColor.withValues(alpha: dotFade),
+    );
     canvas.drawCircle(
       dotCenter,
       dotR * 0.4,
-      Paint()..color = Colors.white.withValues(alpha: 0.85),
+      Paint()..color = Colors.white.withValues(alpha: 0.9 * dotFade),
     );
   }
 
   @override
-  bool shouldRepaint(covariant _RoutePainter old) => old.t != t;
-}
-
-/// Full-screen branded loading screen: the wordmark's dot detaches and
-/// orbits as the loader, over the animated brand gradient, with rotating
-/// travel-flavoured status lines.
-class RovloLoadingScreen extends StatefulWidget {
-  const RovloLoadingScreen({super.key});
-
-  @override
-  State<RovloLoadingScreen> createState() => _RovloLoadingScreenState();
-}
-
-class _RovloLoadingScreenState extends State<RovloLoadingScreen> {
-  static const List<String> _messages = [
-    'Packing your bags…',
-    'Charting the route…',
-    'Finding hidden gems…',
-    'Chasing the sunset…',
-  ];
-
-  int _messageIndex = 0;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 1900), (_) {
-      if (!mounted) return;
-      setState(() => _messageIndex = (_messageIndex + 1) % _messages.length);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: AnimatedGradientBackground(
-        child: SafeArea(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Wordmark without its dot — the loader below IS the dot,
-                // orbiting back to its place at the end of "Rovlo".
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const RovloLogo(fontSize: 52, showDot: false),
-                    const Padding(
-                      padding: EdgeInsets.only(left: 2, bottom: 14),
-                      child: RovloLoader(
-                        size: 26,
-                        dotOnly: true,
-                        dotColor: AppColors.accent,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 36),
-                const RovloLoader(
-                  size: 64,
-                  trailColor: Colors.white,
-                  dotColor: AppColors.accent,
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  height: 24,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 400),
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.4),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    ),
-                    child: Text(
-                      _messages[_messageIndex],
-                      key: ValueKey(_messageIndex),
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 14.5,
-                        letterSpacing: 0.3,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  bool shouldRepaint(covariant _RSignaturePainter old) => old.t != t;
 }

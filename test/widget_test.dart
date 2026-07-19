@@ -27,12 +27,12 @@ void main() {
       ),
     );
 
-    // Branded loading screen is up first.
+    // The "R" loader is up first while the session restores.
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(RovloLoadingScreen), findsOneWidget);
+    expect(find.byType(RovloLoader), findsOneWidget);
 
     // After the minimum splash time + fade, Welcome takes over.
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 1500));
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byType(RovloLogo), findsWidgets);

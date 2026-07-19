@@ -31,9 +31,9 @@ class RovloApp extends StatelessWidget {
   }
 }
 
-/// Shows the branded [RovloLoadingScreen] while the saved session restores,
-/// then fades into Home (signed in) or Welcome (signed out). A short minimum
-/// display time keeps the splash from flashing on fast devices.
+/// Shows the "R" loader while the saved session restores, then fades into
+/// Home (signed in) or Welcome (signed out). A short minimum display time
+/// keeps it from flashing on fast devices.
 class _SplashGate extends StatefulWidget {
   const _SplashGate();
 
@@ -47,7 +47,7 @@ class _SplashGateState extends State<_SplashGate> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 1800)).then((_) {
+    Future<void>.delayed(const Duration(milliseconds: 1100)).then((_) {
       if (mounted) setState(() => _minTimeElapsed = true);
     });
   }
@@ -58,11 +58,13 @@ class _SplashGateState extends State<_SplashGate> {
     final ready = _minTimeElapsed && status != AuthStatus.unknown;
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 450),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
       child: !ready
-          ? const RovloLoadingScreen()
+          ? const Scaffold(
+              body: Center(child: RovloLoader(size: 88)),
+            )
           : status == AuthStatus.signedIn
               ? const HomeScreen()
               : const WelcomeScreen(),
