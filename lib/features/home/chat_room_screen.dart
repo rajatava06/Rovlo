@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -33,6 +34,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _showSafetyBanner = true;
+  final ImagePicker _imagePicker = ImagePicker();
+
+  bool get _isBot => widget.args.name == 'Rovlo';
 
   @override
   void initState() {
@@ -49,17 +53,22 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.dispose();
   }
 
-  void _sendMessage() {
-    final text = _textController.text.trim();
+  void _sendMessage({String? customText}) {
+    final text = (customText ?? _textController.text).trim();
     if (text.isEmpty) return;
 
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     chatProvider.sendMessage(widget.args.name, text, authProvider.currentUser);
-    _textController.clear();
+    if (customText == null) {
+      _textController.clear();
+    }
 
-    // Auto scroll to bottom
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -69,6 +78,130 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         );
       }
     });
+  }
+
+  void _showEmojiPicker() {
+    final emojis = ['😊', '✈️', '🌍', '❤️', '🌊', '🏔️', '🍕', '🎒', '🎉', '👍', '🔥', '🏖️', '📸', '✨', '👋', '🍹'];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        height: 200,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Choose Emoji', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            Expanded(
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                ),
+                itemCount: emojis.length,
+                itemBuilder: (context, index) => GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _textController.text += emojis[index];
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: Center(
+                    child: Text(emojis[index], style: const TextStyle(fontSize: 24)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAttachmentPicker() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: AppColors.primary),
+              title: const Text('Send Photo from Gallery'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
+                if (picked != null) {
+                  _sendMessage(customText: '📷 Sent a photo');
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blue),
+              title: const Text('Capture with Camera'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picked = await _imagePicker.pickImage(source: ImageSource.camera);
+                if (picked != null) {
+                  _sendMessage(customText: '📷 Captured photo');
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.green),
+              title: const Text('Share Live Location'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _sendMessage(customText: '📍 Shared current location');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _makeAudioCall() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.phone, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Text('Calling ${widget.args.name}...'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: NetworkImage(widget.args.imageUrl),
+            ),
+            const SizedBox(height: 16),
+            const Text('Audio call in progress...', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('End Call', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -84,11 +217,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: GestureDetector(
           onTap: () {
+            if (_isBot) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('🤖 Rovlo is your automated travel assistant!')),
+              );
+              return;
+            }
+
             final travelerName = widget.args.name;
             final matchingTravelers = SampleTravelers.list.where((t) => t.name == travelerName);
             final traveler = matchingTravelers.isNotEmpty
@@ -115,10 +255,22 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           },
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundImage: NetworkImage(widget.args.imageUrl),
-              ),
+              _isBot
+                  ? Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFF6B35),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const CircleAvatar(
+                        radius: 16,
+                        backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
+                      ),
+                    )
+                  : CircleAvatar(
+                      radius: 18,
+                      backgroundImage: NetworkImage(widget.args.imageUrl),
+                    ),
               const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,9 +288,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       ],
                     ],
                   ),
-                  const Text(
-                    'Active now',
-                    style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w500),
+                  Text(
+                    _isBot ? 'Automated Bot 🤖' : 'Active now',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _isBot ? Colors.orange : Colors.green,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -146,23 +302,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined),
-            onPressed: () {},
-          ),
+          // Audio Call ONLY
           IconButton(
             icon: const Icon(Icons.call_outlined),
-            onPressed: () {},
+            onPressed: _makeAudioCall,
           ),
         ],
       ),
       body: Column(
         children: [
-          // ── Safety Banner ────────────────────────────────────────────────────
-          if (_showSafetyBanner)
+          if (_showSafetyBanner && !_isBot)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: const Color(0xFFFEEADF), // Pale peach banner
+              color: const Color(0xFFFEEADF),
               child: Row(
                 children: [
                   const Icon(Icons.shield_outlined, color: AppColors.primary, size: 20),
@@ -191,167 +343,93 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               ),
             ),
 
-          // ── Scrollable Chat Room Feed ────────────────────────────────────────
           Expanded(
-            child: ListView(
+            child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              children: [
-                // Matched Info / Intwined avatars
-                Center(
-                  child: Column(
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                final msg = messages[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    mainAxisAlignment: msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        width: 84,
-                        height: 46,
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              left: 0,
-                              child: Container(
-                                width: 46,
-                                height: 46,
-                                decoration: BoxDecoration(
+                      if (!msg.isMe) ...[
+                        _isBot
+                            ? Container(
+                                padding: const EdgeInsets.all(1.5),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF6B35),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
-                                  color: primaryPeach,
                                 ),
-                                child: const Center(
-                                  child: Text(
-                                    'Me',
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
+                                child: const CircleAvatar(
+                                  radius: 14,
+                                  backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
                                 ),
+                              )
+                            : CircleAvatar(
+                                radius: 14,
+                                backgroundImage: NetworkImage(widget.args.imageUrl),
                               ),
-                            ),
-                            Positioned(
-                              left: 38,
-                              child: Container(
-                                width: 46,
-                                height: 46,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
-                                  image: DecorationImage(
-                                    image: NetworkImage(widget.args.imageUrl),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDF0E9),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
                         child: Column(
+                          crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.map_outlined, color: AppColors.primary, size: 24),
-                            const SizedBox(height: 8),
-                            Text(
-                              'You both have an overlap in ${widget.args.name.split(' ').first}\'s location next month! Say hi.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF6B4533),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: msg.isMe
+                                    ? const Color(0xFF8B5A2B)
+                                    : (isDark ? AppColors.darkCard : const Color(0xFFEBEBEB)),
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(16),
+                                  topRight: const Radius.circular(16),
+                                  bottomLeft: Radius.circular(msg.isMe ? 16 : 0),
+                                  bottomRight: Radius.circular(msg.isMe ? 0 : 16),
+                                ),
                               ),
+                              child: Text(
+                                msg.text,
+                                style: TextStyle(
+                                  color: msg.isMe
+                                      ? Colors.white
+                                      : (isDark ? Colors.white : AppColors.lightTextPrimary),
+                                  fontSize: 14,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  msg.timeFormatted,
+                                  style: TextStyle(
+                                    color: textSecColor.withValues(alpha: 0.6),
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                if (msg.isMe) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.done_all, color: Colors.blue, size: 12),
+                                ],
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'MATCHED TODAY',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: textSecColor.withValues(alpha: 0.6),
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
                     ],
                   ),
-                ),
-
-                // Bubbles List
-                ...messages.map((msg) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Row(
-                      mainAxisAlignment: msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (!msg.isMe) ...[
-                          CircleAvatar(
-                            radius: 14,
-                            backgroundImage: NetworkImage(widget.args.imageUrl),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: msg.isMe
-                                      ? const Color(0xFF8B5A2B) // Warm brown message bubble
-                                      : (isDark ? AppColors.darkCard : const Color(0xFFEBEBEB)),
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(16),
-                                    topRight: const Radius.circular(16),
-                                    bottomLeft: Radius.circular(msg.isMe ? 16 : 0),
-                                    bottomRight: Radius.circular(msg.isMe ? 0 : 16),
-                                  ),
-                                ),
-                                child: Text(
-                                  msg.text,
-                                  style: TextStyle(
-                                    color: msg.isMe
-                                        ? Colors.white
-                                        : (isDark ? Colors.white : AppColors.lightTextPrimary),
-                                    fontSize: 14,
-                                    height: 1.3,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    msg.timeFormatted,
-                                    style: TextStyle(
-                                      color: textSecColor.withValues(alpha: 0.6),
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                  if (msg.isMe) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.done_all, color: Colors.blue, size: 12),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
+                );
+              },
             ),
           ),
 
-          // ── Bottom Message Input Field ───────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -367,7 +445,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         children: [
                           IconButton(
                             icon: Icon(Icons.sentiment_satisfied_alt_outlined, color: textSecColor),
-                            onPressed: () {},
+                            onPressed: _showEmojiPicker,
                           ),
                           Expanded(
                             child: TextField(
@@ -384,7 +462,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                           ),
                           IconButton(
                             icon: Icon(Icons.attach_file, color: textSecColor),
-                            onPressed: () {},
+                            onPressed: _showAttachmentPicker,
                           ),
                         ],
                       ),
@@ -392,7 +470,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   ),
                   const SizedBox(width: 8),
                   GestureDetector(
-                    onTap: _sendMessage,
+                    onTap: () => _sendMessage(),
                     child: Container(
                       width: 44,
                       height: 44,

@@ -205,20 +205,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          SafeArea(
-            top: true,
-            bottom: false,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: child,
-              ),
-              child: KeyedSubtree(
-                key: ValueKey(_index),
-                child: tabs[_index],
-              ),
-            ),
+          // If Maps tab (index 0), render full screen without top SafeArea padding
+          Positioned.fill(
+            child: _index == 0
+                ? const MapsTab()
+                : SafeArea(
+                    top: true,
+                    bottom: false,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey(_index),
+                        child: tabs[_index],
+                      ),
+                    ),
+                  ),
           ),
 
           // ── In-App Heads-up Notification Banner ──

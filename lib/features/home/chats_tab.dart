@@ -195,10 +195,23 @@ class ChatsTab extends StatelessWidget {
                         children: [
                           Stack(
                             children: [
-                              CircleAvatar(
-                                radius: 28,
-                                backgroundImage: NetworkImage(conv.contactImageUrl),
-                              ),
+                              if (conv.contactName == 'Rovlo')
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFF6B35),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const CircleAvatar(
+                                    radius: 25,
+                                    backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
+                                  ),
+                                )
+                              else
+                                CircleAvatar(
+                                  radius: 28,
+                                  backgroundImage: NetworkImage(conv.contactImageUrl),
+                                ),
                               if (conv.contactName != 'Rovlo')
                                 Positioned(
                                   right: 0,

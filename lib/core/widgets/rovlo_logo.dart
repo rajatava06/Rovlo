@@ -50,18 +50,30 @@ class RovloLogo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (showIcon) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(fontSize * 0.18),
-            child: Image.asset(
-              'assets/images/rovlo_logo.jpg',
-              width: fontSize * 0.85,
-              height: fontSize * 0.85,
-              fit: BoxFit.contain,
+          Container(
+            padding: EdgeInsets.all(fontSize * 0.08),
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              borderRadius: BorderRadius.circular(fontSize * 0.25),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(fontSize * 0.22),
+              child: Image.asset(
+                'assets/images/rovlo_logo.jpg',
+                width: fontSize * 1.15,
+                height: fontSize * 1.15,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
-          SizedBox(width: fontSize * 0.18),
+          SizedBox(width: fontSize * 0.22),
         ],
-        text,
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: text,
+          ),
+        ),
       ],
     );
 

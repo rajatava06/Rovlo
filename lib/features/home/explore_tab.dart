@@ -935,7 +935,7 @@ class _ProfileCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Name + Age overlay bottom
+                  // Name + Age + About 1.5 lines preview overlay
                   Positioned(
                     bottom: 16,
                     left: 20,
@@ -977,35 +977,42 @@ class _ProfileCard extends StatelessWidget {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
+                        // About text overlay (1.5 lines with Read More)
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            for (var i = 0; i < traveler.tags.length && i < 2; i++) ...[
-                              if (i > 0) const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: i == 0
-                                      ? Colors.black.withValues(alpha: 0.6)
-                                      : AppColors.secondary,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: i == 0
-                                      ? Border.all(
-                                          color: Colors.white.withValues(alpha: 0.3),
-                                          width: 1,
-                                        )
-                                      : null,
+                            Expanded(
+                              child: Text(
+                                traveler.about.isNotEmpty ? traveler.about : traveler.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 13,
+                                  height: 1.3,
                                 ),
-                                child: Text(
-                                  traveler.tags[i],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: onTapProfile,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  'Read More',
                                   style: TextStyle(
-                                    color: i == 0 ? Colors.white : AppColors.lightTextPrimary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ],
@@ -1016,39 +1023,9 @@ class _ProfileCard extends StatelessWidget {
             ),
           ),
 
-          // ── About preview (scrollable) ─────────────────────────────────
-          Expanded(
-            flex: 2,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'About',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    traveler.about.isNotEmpty ? traveler.about : traveler.description,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: isDark ? Colors.white60 : Colors.black45,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
           // ── Action Buttons (Reject / Like / Save) ─────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -1177,7 +1154,42 @@ class _NotificationItem extends StatelessWidget {
                 description,
                 style: TextStyle(color: context.rovlo.textSecondary, fontSize: 13),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
+              if (title.contains('Match') || title.contains('nearby') || title.contains('liked')) ...[
+                Row(
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Accepted match request! 💕')),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Accept', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Request declined.')),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
               Text(
                 time,
                 style: TextStyle(color: context.rovlo.textSecondary.withValues(alpha: 0.6), fontSize: 11),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -28,13 +27,6 @@ class _MapsTabState extends State<MapsTab> {
   double _deviceLongitude = 2.1734;
 
   final List<MapPin> _pins = [];
-  GoogleMapController? _googleMapController;
-
-  bool get _useMockMap {
-    // Return true on all platforms to display the beautifully designed custom vector map
-    // and avoid crashes due to missing Google Maps API keys on Android/iOS.
-    return true;
-  }
 
   @override
   void initState() {
@@ -65,10 +57,8 @@ class _MapsTabState extends State<MapsTab> {
         _deviceLatitude = position.latitude;
         _deviceLongitude = position.longitude;
         _locationAllowed = true;
-        _askedLocation = true;
         _generateNearbyTravelers(_deviceLatitude, _deviceLongitude);
       });
-      _moveGoogleMapCamera();
     } catch (_) {
       // Geolocator failed or not supported on this platform
     }
@@ -103,19 +93,6 @@ class _MapsTabState extends State<MapsTab> {
     ));
   }
 
-  void _moveGoogleMapCamera() {
-    if (_googleMapController != null && _locationAllowed) {
-      _googleMapController!.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: LatLng(_deviceLatitude, _deviceLongitude),
-            zoom: 14.0,
-          ),
-        ),
-      );
-    }
-  }
-
   void _onPinTap(Traveler traveler) {
     setState(() {
       _selectedTraveler = traveler;
@@ -123,23 +100,15 @@ class _MapsTabState extends State<MapsTab> {
   }
 
   void _zoomIn() {
-    if (_googleMapController != null) {
-      _googleMapController!.animateCamera(CameraUpdate.zoomIn());
-    } else {
-      setState(() {
-        if (_zoom < 2.0) _zoom += 0.15;
-      });
-    }
+    setState(() {
+      if (_zoom < 2.0) _zoom += 0.15;
+    });
   }
 
   void _zoomOut() {
-    if (_googleMapController != null) {
-      _googleMapController!.animateCamera(CameraUpdate.zoomOut());
-    } else {
-      setState(() {
-        if (_zoom > 0.6) _zoom -= 0.15;
-      });
-    }
+    setState(() {
+      if (_zoom > 0.6) _zoom -= 0.15;
+    });
   }
 
   Future<void> _recenter() async {
@@ -154,11 +123,10 @@ class _MapsTabState extends State<MapsTab> {
             _locationAllowed = true;
             _askedLocation = true;
             _generateNearbyTravelers(_deviceLatitude, _deviceLongitude);
-            _mapOffset = const Offset(-50, -50);
+            _mapOffset = Offset.zero;
             _zoom = 1.0;
             _selectedTraveler = null;
           });
-          _moveGoogleMapCamera();
         } catch (_) {
           setState(() {
             _locationAllowed = true;
@@ -166,9 +134,11 @@ class _MapsTabState extends State<MapsTab> {
           });
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission denied. Map centered on default Barcelona coordinates.')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied. Map centered on default coordinates.')),
+          );
+        }
       }
     } else {
       try {
@@ -176,15 +146,14 @@ class _MapsTabState extends State<MapsTab> {
         setState(() {
           _deviceLatitude = position.latitude;
           _deviceLongitude = position.longitude;
-          _mapOffset = const Offset(-50, -50);
+          _mapOffset = Offset.zero;
           _zoom = 1.0;
           _selectedTraveler = null;
           _generateNearbyTravelers(_deviceLatitude, _deviceLongitude);
         });
-        _moveGoogleMapCamera();
       } catch (_) {
         setState(() {
-          _mapOffset = const Offset(-50, -50);
+          _mapOffset = Offset.zero;
           _zoom = 1.0;
           _selectedTraveler = null;
         });
@@ -201,59 +170,103 @@ class _MapsTabState extends State<MapsTab> {
 
     return Stack(
       children: [
-        // ── Map Layer (Real Google Maps or Vector Fallback) ──
+        // ── Map Layer (Interactive Street Vector & Radar Map) ──
         Positioned.fill(
-          child: _useMockMap
-              ? GestureDetector(
-                  onPanUpdate: (details) {
-                    setState(() {
-                      _mapOffset += details.delta;
-                    });
-                  },
-                  child: Container(
-                    color: isDark ? const Color(0xFF070E17) : const Color(0xFFEFECE6),
-                    width: double.infinity,
-                    height: double.infinity,
-                    child: ClipRect(
-                      child: Transform.translate(
-                        offset: _mapOffset,
-                        child: Transform.scale(
-                          scale: _zoom,
-                          child: CustomPaint(
-                            painter: _MapPainter(
-                              isDark: isDark,
-                              mapStyle: _mapStyle,
-                            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final h = constraints.maxHeight;
+
+              // Position pins relative to current screen size
+              final dynamicPins = [
+                MapPin(
+                  traveler: SampleTravelers.list[0],
+                  latitude: _deviceLatitude + 0.002,
+                  longitude: _deviceLongitude - 0.003,
+                  offset: Offset(w * 0.25, h * 0.35),
+                ),
+                MapPin(
+                  traveler: SampleTravelers.list[1],
+                  latitude: _deviceLatitude - 0.003,
+                  longitude: _deviceLongitude + 0.004,
+                  offset: Offset(w * 0.68, h * 0.28),
+                ),
+                MapPin(
+                  traveler: SampleTravelers.list[2],
+                  latitude: _deviceLatitude + 0.004,
+                  longitude: _deviceLongitude + 0.002,
+                  offset: Offset(w * 0.45, h * 0.62),
+                ),
+              ];
+
+              return GestureDetector(
+                onPanUpdate: (details) {
+                  setState(() {
+                    _mapOffset += details.delta;
+                  });
+                },
+                child: Container(
+                  color: isDark ? const Color(0xFF0D1B2A) : const Color(0xFFE9ECEF),
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: ClipRect(
+                    child: Transform.translate(
+                      offset: _mapOffset,
+                      child: Transform.scale(
+                        scale: _zoom,
+                        child: CustomPaint(
+                          size: Size(w, h),
+                          painter: _MapPainter(
+                            isDark: isDark,
+                            mapStyle: _mapStyle,
+                          ),
+                          child: SizedBox(
+                            width: w,
+                            height: h,
                             child: Stack(
                               children: [
-                                // GPS center indicator
-                                if (_locationAllowed && !_ghostMode)
+                                // GPS Current Location Pulsing Radar
+                                if (!_ghostMode)
                                   Positioned(
-                                    left: 400,
-                                    top: 400,
+                                    left: w * 0.5 - 20,
+                                    top: h * 0.5 - 20,
                                     child: Container(
-                                      width: 24,
-                                      height: 24,
+                                      width: 40,
+                                      height: 40,
                                       decoration: BoxDecoration(
-                                        color: primaryPeach.withValues(alpha: 0.25),
+                                        color: primaryPeach.withValues(alpha: 0.2),
                                         shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: primaryPeach.withValues(alpha: 0.6),
+                                          width: 1.5,
+                                        ),
                                       ),
                                       alignment: Alignment.center,
                                       child: Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: const BoxDecoration(
-                                          color: Colors.blue,
+                                        width: 14,
+                                        height: 14,
+                                        decoration: BoxDecoration(
+                                          color: primaryPeach,
                                           shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white, width: 2),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: primaryPeach.withValues(alpha: 0.5),
+                                              blurRadius: 8,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
                                   ),
-                                ..._pins.map((pin) {
+
+                                // Nearby Traveler Pins
+                                ...dynamicPins.map((pin) {
                                   final isSelected = _selectedTraveler?.name == pin.traveler.name;
                                   return Positioned(
-                                    left: pin.offset.dx,
-                                    top: pin.offset.dy,
+                                    left: pin.offset.dx - 20,
+                                    top: pin.offset.dy - 30,
                                     child: GestureDetector(
                                       onTap: () => _onPinTap(pin.traveler),
                                       child: _buildMockPinWidget(pin, isSelected, primaryPeach, isDark),
@@ -267,76 +280,97 @@ class _MapsTabState extends State<MapsTab> {
                       ),
                     ),
                   ),
-                )
-              : GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: LatLng(_deviceLatitude, _deviceLongitude),
-                    zoom: 14.0,
-                  ),
-                  myLocationEnabled: !_ghostMode && _locationAllowed,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  mapToolbarEnabled: false,
-                  mapType: _mapStyle == 'Standard'
-                      ? MapType.normal
-                      : _mapStyle == 'Satellite'
-                          ? MapType.satellite
-                          : MapType.terrain,
-                  onMapCreated: (controller) {
-                    _googleMapController = controller;
-                    _moveGoogleMapCamera();
-                  },
-                  markers: _pins.map((pin) {
-                    return Marker(
-                      markerId: MarkerId(pin.traveler.name),
-                      position: LatLng(pin.latitude, pin.longitude),
-                      onTap: () => _onPinTap(pin.traveler),
-                    );
-                  }).toSet(),
                 ),
+              );
+            },
+          ),
         ),
 
-        // ── Floating Search Bar ──
+        // ── Floating Search Bar & Live GPS Chip ──
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Container(
-              height: 52,
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.search, color: AppColors.accent),
-                  ),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Search locations near Bali...',
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.search, color: AppColors.accent),
+                      ),
+                      const Expanded(
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Search locations near you...',
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _recenter,
+                        icon: const Icon(Icons.my_location, color: AppColors.accent),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Live GPS Location Indicator Badge
+                GestureDetector(
+                  onTap: _recenter,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: primaryPeach.withValues(alpha: 0.4),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.gps_fixed, size: 13, color: primaryPeach),
+                        const SizedBox(width: 6),
+                        Text(
+                          _locationAllowed
+                              ? '📍 GPS: ${_deviceLatitude.toStringAsFixed(4)}, ${_deviceLongitude.toStringAsFixed(4)}'
+                              : '📍 Tap to locate device position',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: _recenter,
-                    icon: const Icon(Icons.my_location, color: AppColors.accent),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -651,58 +685,111 @@ class _MapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint landPaint = Paint()
-      ..color = mapStyle == 'Satellite'
-          ? (isDark ? const Color(0xFF0F1B2C) : const Color(0xFF8B9B7E))
-          : (isDark ? const Color(0xFF0B1420) : const Color(0xFFECE7DF))
-      ..style = PaintingStyle.fill;
-
+    // 1. Ocean & Water Base Layer
     final Paint waterPaint = Paint()
       ..color = mapStyle == 'Satellite'
-          ? (isDark ? const Color(0xFF060B12) : const Color(0xFF5A7CA6))
-          : (isDark ? const Color(0xFF040911) : const Color(0xFFB5D0EB))
+          ? (isDark ? const Color(0xFF051329) : const Color(0xFF3B6998))
+          : (isDark ? const Color(0xFF0F3B66) : const Color(0xFF7FAEE3))
       ..style = PaintingStyle.fill;
 
-    final Paint gridPaint = Paint()
-      ..color = isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.02)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+    canvas.drawRect(const Rect.fromLTWH(-2000, -2000, 5000, 5000), waterPaint);
 
-    final Paint greenPaint = Paint()
+    // 2. City Landmass Layer
+    final Paint landPaint = Paint()
       ..color = mapStyle == 'Satellite'
-          ? (isDark ? const Color(0xFF142C23) : const Color(0xFF637C54))
-          : (isDark ? const Color(0xFF0D1E16) : const Color(0xFFD4E6CF))
+          ? (isDark ? const Color(0xFF142436) : const Color(0xFF6B835E))
+          : (isDark ? const Color(0xFF1A293B) : const Color(0xFFF3EFE6))
       ..style = PaintingStyle.fill;
-
-    canvas.drawRect(const Rect.fromLTWH(-1000, -1000, 3000, 3000), waterPaint);
 
     final Path landPath = Path()
-      ..moveTo(100, 450)
-      ..quadraticBezierTo(200, 150, 400, 200)
-      ..quadraticBezierTo(600, 250, 800, 380)
-      ..quadraticBezierTo(900, 500, 700, 580)
-      ..quadraticBezierTo(500, 620, 350, 550)
-      ..quadraticBezierTo(200, 600, 100, 450)
+      ..moveTo(-1000, -1000)
+      ..lineTo(3000, -1000)
+      ..lineTo(3000, 3000)
+      ..lineTo(-1000, 3000)
       ..close();
     canvas.drawPath(landPath, landPaint);
 
-    final Path greenPath1 = Path()
-      ..moveTo(250, 300)
-      ..quadraticBezierTo(300, 220, 400, 280)
-      ..quadraticBezierTo(350, 380, 250, 300)
-      ..close();
-    canvas.drawPath(greenPath1, greenPaint);
+    // 3. Urban Blocks / Neighborhood Quadrants
+    final Paint blockPaint = Paint()
+      ..color = isDark ? const Color(0xFF22354B) : const Color(0xFFE5E0D8)
+      ..style = PaintingStyle.fill;
 
-    final Path greenPath2 = Path()
-      ..moveTo(480, 320)
-      ..quadraticBezierTo(580, 300, 550, 450)
-      ..quadraticBezierTo(420, 400, 480, 320)
-      ..close();
-    canvas.drawPath(greenPath2, greenPaint);
+    final List<Rect> cityBlocks = [
+      const Rect.fromLTWH(80, 100, 160, 120),
+      const Rect.fromLTWH(260, 100, 200, 140),
+      const Rect.fromLTWH(80, 240, 140, 180),
+      const Rect.fromLTWH(240, 260, 180, 160),
+      const Rect.fromLTWH(440, 240, 220, 190),
+      const Rect.fromLTWH(100, 440, 200, 160),
+      const Rect.fromLTWH(320, 440, 240, 200),
+      const Rect.fromLTWH(580, 450, 180, 180),
+    ];
+    for (final b in cityBlocks) {
+      canvas.drawRRect(RRect.fromRectAndRadius(b, const Radius.circular(8)), blockPaint);
+    }
 
-    for (double i = -1000; i < 2000; i += 80) {
-      canvas.drawLine(Offset(i, -1000), Offset(i, 2000), gridPaint);
-      canvas.drawLine(Offset(-1000, i), Offset(2000, i), gridPaint);
+    // 4. Parks & Green Reserves
+    final Paint parkPaint = Paint()
+      ..color = mapStyle == 'Satellite'
+          ? (isDark ? const Color(0xFF1B4332) : const Color(0xFF4D7C5D))
+          : (isDark ? const Color(0xFF1A4D3B) : const Color(0xFFAFE1BD))
+      ..style = PaintingStyle.fill;
+
+    final List<Path> parkPaths = [
+      Path()
+        ..moveTo(100, 120)
+        ..quadraticBezierTo(240, 80, 340, 180)
+        ..quadraticBezierTo(280, 320, 140, 280)
+        ..close(),
+      Path()
+        ..moveTo(450, 280)
+        ..quadraticBezierTo(650, 240, 600, 460)
+        ..quadraticBezierTo(420, 420, 450, 280)
+        ..close(),
+    ];
+    for (final p in parkPaths) {
+      canvas.drawPath(p, parkPaint);
+    }
+
+    // 5. River & Water Canal Path
+    final Path riverPath = Path()
+      ..moveTo(-300, 200)
+      ..cubicTo(150, 320, 350, 80, 650, 350)
+      ..cubicTo(850, 500, 1200, 400, 1600, 650);
+
+    final Paint riverStroke = Paint()
+      ..color = waterPaint.color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 36;
+    canvas.drawPath(riverPath, riverStroke);
+
+    // 6. Primary Avenues & Golden Highways
+    final Paint highwayPaint = Paint()
+      ..color = mapStyle == 'Satellite'
+          ? Colors.amber.shade700
+          : (isDark ? const Color(0xFFFF9F0A) : const Color(0xFFF59E0B))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9.0;
+
+    final List<Path> avenues = [
+      Path()..moveTo(-500, 230)..lineTo(2000, 230),
+      Path()..moveTo(330, -500)..lineTo(330, 2000),
+      Path()..moveTo(-500, 550)..lineTo(2000, 120),
+      Path()..moveTo(120, -500)..lineTo(680, 2000),
+    ];
+    for (final a in avenues) {
+      canvas.drawPath(a, highwayPaint);
+    }
+
+    // 7. Secondary Street Grid Network
+    final Paint secondaryStreetPaint = Paint()
+      ..color = isDark ? const Color(0xFF384F6B) : const Color(0xFFCBD5E1)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
+    for (double i = -500; i < 2000; i += 65) {
+      canvas.drawLine(Offset(i, -500), Offset(i, 2000), secondaryStreetPaint);
+      canvas.drawLine(Offset(-500, i), Offset(2000, i), secondaryStreetPaint);
     }
   }
 

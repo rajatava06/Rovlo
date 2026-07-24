@@ -44,7 +44,7 @@ class _TravelPreferencesScreenState extends State<TravelPreferencesScreen> {
   Widget build(BuildContext context) {
     return OnboardingScaffold(
       step: 6,
-      totalSteps: 6,
+      totalSteps: 7,
       title: 'What kind of traveller are you?',
       subtitle:
           'Pick at least 3. We\'ll use these to suggest trips you\'ll love.',

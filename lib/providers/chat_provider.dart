@@ -180,7 +180,7 @@ class ChatProvider extends ChangeNotifier {
       reply = '⭐ Rovlo Plus Subscription plans:\n'
           '1. Free Tier: ₹0/month (Limited swipe capacity, basic map browsing).\n'
           '2. Plus Tier: ₹199/month (Unlimited likes, passport control, hide ads).\n'
-          '3. Premium Tier: ₹299/month (Priority matches, premium filters, 5 free Super Likes per week).\n\nGo to Profile -> Rovlo Plus to subscribe now!';
+          '3. Premium Tier: ₹499/month (Priority matches, premium filters, 5 free Super Likes per week).\n\nGo to Profile -> Rovlo Plus to subscribe now!';
     } else {
       reply = 'Rovlo Bot here! 🤖 I\'m not sure about that. Try asking about "profile completion", "notifications", "maps location", "ghost mode", or "plus plans".';
     }
@@ -210,7 +210,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _triggerNotification(String sender, String snippet) {
-    final alertText = '$sender: ${snippet.length > 50 ? snippet.substring(0, 50) + "..." : snippet}';
+    final alertText = '$sender: ${snippet.length > 50 ? "${snippet.substring(0, 50)}..." : snippet}';
     _notificationStreamController.add(alertText);
   }
 }

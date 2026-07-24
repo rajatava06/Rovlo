@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../profile/verify_screen.dart';
 import '../profile/rovlo_plus_screen.dart';
 import '../profile/emergency_contacts_screen.dart';
+import 'saved_tab.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -767,6 +768,30 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+
+          // Saved Profiles button
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SavedTab()),
+              ),
+              icon: const Icon(Icons.bookmark_outline, color: Colors.white, size: 18),
+              label: const Text(
+                'Saved Profiles & Trips',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
 
           if (user.travelInterests.isNotEmpty) ...[
@@ -856,6 +881,40 @@ class _ProfileTabState extends State<ProfileTab> {
               label: const Text('Sign out', style: TextStyle(color: AppColors.error)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: AppColors.error.withValues(alpha: 0.4)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await provider.togglePauseAccount();
+                if (!context.mounted) return;
+                final isPaused = provider.currentUser?.isPaused ?? false;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isPaused
+                          ? '⏸️ Account paused. Your profile is hidden from discovery.'
+                          : '▶️ Account resumed! You are visible again.',
+                    ),
+                  ),
+                );
+              },
+              icon: Icon(
+                user.isPaused ? Icons.play_arrow : Icons.pause_circle_outline,
+                color: Colors.orange,
+              ),
+              label: Text(
+                user.isPaused ? 'Resume Account' : 'Pause Account',
+                style: const TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.orange),
               ),
             ),
           ),

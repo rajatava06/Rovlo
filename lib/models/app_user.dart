@@ -24,6 +24,7 @@ class AppUser {
     this.subscriptionTier = 'free',
     this.emergencyContacts = const [],
     this.profilePhotos = const <String>[],
+    this.isPaused = false,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class AppUser {
   final String subscriptionTier;
   final List<Map<String, String>> emergencyContacts;
   final List<String> profilePhotos;
+  final bool isPaused;
 
   bool get isAdmin => false; // resolved via AppConstants.isAdminEmail(email)
 
@@ -105,6 +107,7 @@ class AppUser {
     String? subscriptionTier,
     List<Map<String, String>>? emergencyContacts,
     List<String>? profilePhotos,
+    bool? isPaused,
   }) {
     return AppUser(
       id: id,
@@ -125,6 +128,7 @@ class AppUser {
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       emergencyContacts: emergencyContacts ?? this.emergencyContacts,
       profilePhotos: profilePhotos ?? this.profilePhotos,
+      isPaused: isPaused ?? this.isPaused,
     );
   }
 
@@ -147,6 +151,7 @@ class AppUser {
         'subscriptionTier': subscriptionTier,
         'emergencyContacts': emergencyContacts,
         'profilePhotos': profilePhotos,
+        'isPaused': isPaused,
       };
 
   factory AppUser.fromMap(Map<String, dynamic> map) => AppUser(
@@ -179,6 +184,7 @@ class AppUser {
         profilePhotos: (map['profilePhotos'] as List<dynamic>? ?? const <dynamic>[])
             .map((e) => e.toString())
             .toList(),
+        isPaused: map['isPaused'] as bool? ?? false,
       );
 
   String toJson() => jsonEncode(toMap());
