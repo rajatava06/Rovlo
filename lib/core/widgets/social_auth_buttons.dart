@@ -44,9 +44,10 @@ class SocialButton extends StatelessWidget {
   }) {
     return SocialButton(
       label: 'Continue with Apple',
-      icon: const Text(
-        '', // Apple logo glyph on Apple platforms; falls back gracefully.
-        style: TextStyle(color: Colors.white, fontSize: 22),
+      icon: const Icon(
+        Icons.apple,
+        color: Colors.white,
+        size: 24,
       ),
       onPressed: onPressed,
       loading: loading,

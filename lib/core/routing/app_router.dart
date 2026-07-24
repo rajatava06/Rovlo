@@ -5,6 +5,7 @@ import '../../features/auth/dob_screen.dart';
 import '../../features/auth/gender_screen.dart';
 import '../../features/auth/name_screen.dart';
 import '../../features/auth/phone_number_screen.dart';
+import '../../features/auth/photos_selection_screen.dart';
 import '../../features/auth/social_auth_screen.dart';
 import '../../features/auth/travel_preferences_screen.dart';
 import '../../features/home/home_screen.dart';
@@ -20,6 +21,7 @@ class Routes {
   static const String socialAuth = '/auth/social';
   static const String name = '/create/name';
   static const String gender = '/create/gender';
+  static const String photos = '/create/photos';
   static const String dob = '/create/dob';
   static const String travel = '/create/travel';
   static const String home = '/home';
@@ -46,6 +48,8 @@ class Routes {
         return (_) => const NameScreen();
       case gender:
         return (_) => const GenderScreen();
+      case photos:
+        return (_) => const PhotosSelectionScreen();
       case dob:
         return (_) => const DobScreen();
       case travel:

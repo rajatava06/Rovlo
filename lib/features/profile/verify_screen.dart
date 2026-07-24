@@ -145,7 +145,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.picture_as_pdf_outlined, size: 16, color: Colors.red),
+                                Icon(Icons.file_present_outlined, size: 16, color: primaryPeach),
                                 const SizedBox(width: 8),
                                 Text(
                                   _uploadedFileName!,
@@ -282,7 +282,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       builder: (ctx) {
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,36 +291,29 @@ class _VerifyScreenState extends State<VerifyScreen> {
                 'Upload Government ID',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
-                'Select the file format to upload your ID document',
+                'Upload any official document (Passport, Aadhaar, License). Supported formats: PDF, PNG, JPEG.',
                 style: TextStyle(fontSize: 13, color: context.rovlo.textSecondary),
               ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _UploadFormatBtn(
-                    label: 'PDF Document',
-                    icon: Icons.picture_as_pdf,
-                    color: Colors.red.shade400,
-                    onTap: () => _mockUpload(ctx, 'government_id.pdf'),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton.icon(
+                  onPressed: () => _mockUpload(ctx, 'govt_id_document.pdf'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryPeach,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  _UploadFormatBtn(
-                    label: 'PNG Image',
-                    icon: Icons.image,
-                    color: Colors.blue.shade400,
-                    onTap: () => _mockUpload(ctx, 'govt_id_scanned.png'),
+                  icon: const Icon(Icons.upload_file, color: Colors.white),
+                  label: const Text(
+                    'Select Document or Image',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                   ),
-                  _UploadFormatBtn(
-                    label: 'JPEG Image',
-                    icon: Icons.insert_photo,
-                    color: Colors.green.shade400,
-                    onTap: () => _mockUpload(ctx, 'govt_id_scanned.jpg'),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
             ],
           ),
         );
@@ -410,45 +403,6 @@ class _VerifyScreenState extends State<VerifyScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _UploadFormatBtn extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _UploadFormatBtn({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
       ),
     );
   }

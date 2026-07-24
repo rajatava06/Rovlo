@@ -41,7 +41,7 @@ class _NameScreenState extends State<NameScreen> {
   Widget build(BuildContext context) {
     return OnboardingScaffold(
       step: 2,
-      totalSteps: 6,
+      totalSteps: 7,
       title: 'What should we call you?',
       subtitle: 'This is the name fellow travellers and hosts will see.',
       continueEnabled: _valid,

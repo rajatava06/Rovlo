@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 /// Authentication provider used to create / sign into an account.
-/// enum AuthMethod { google, apple, phone }
 enum AuthMethod { google, apple, phone }
 
 /// A Rovlo user account + profile.
@@ -24,6 +23,8 @@ class AppUser {
     this.isVerified = false,
     this.subscriptionTier = 'free',
     this.emergencyContacts = const [],
+    this.profilePhotos = const <String>[],
+    this.isPaused = false,
   });
 
   final String id;
@@ -43,6 +44,8 @@ class AppUser {
   final bool isVerified;
   final String subscriptionTier;
   final List<Map<String, String>> emergencyContacts;
+  final List<String> profilePhotos;
+  final bool isPaused;
 
   bool get isAdmin => false; // resolved via AppConstants.isAdminEmail(email)
 
@@ -63,13 +66,21 @@ class AppUser {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
+  /// Returns user's profile pictures. If profilePhotos is empty but photoUrl is present,
+  /// returns a list containing photoUrl to maintain backward compatibility.
+  List<String> get effectivePhotos {
+    if (profilePhotos.isNotEmpty) return profilePhotos;
+    if (photoUrl != null && photoUrl!.isNotEmpty) return [photoUrl!];
+    return const [];
+  }
+
   /// Calculates profile completion percentage (0.0 to 1.0).
   double get profileCompletionPercent {
     int filled = 0;
     const total = 9;
     if (name != null && name!.trim().isNotEmpty) filled++;
     if (bio != null && bio!.trim().isNotEmpty) filled++;
-    if (photoUrl != null && photoUrl!.isNotEmpty) filled++;
+    if (effectivePhotos.isNotEmpty) filled++;
     if (dob != null && dob!.isNotEmpty) filled++;
     if (homeBase != null && homeBase!.isNotEmpty) filled++;
     if (gender != null && gender!.isNotEmpty) filled++;
@@ -95,6 +106,8 @@ class AppUser {
     bool? isVerified,
     String? subscriptionTier,
     List<Map<String, String>>? emergencyContacts,
+    List<String>? profilePhotos,
+    bool? isPaused,
   }) {
     return AppUser(
       id: id,
@@ -114,6 +127,8 @@ class AppUser {
       isVerified: isVerified ?? this.isVerified,
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       emergencyContacts: emergencyContacts ?? this.emergencyContacts,
+      profilePhotos: profilePhotos ?? this.profilePhotos,
+      isPaused: isPaused ?? this.isPaused,
     );
   }
 
@@ -135,6 +150,8 @@ class AppUser {
         'isVerified': isVerified,
         'subscriptionTier': subscriptionTier,
         'emergencyContacts': emergencyContacts,
+        'profilePhotos': profilePhotos,
+        'isPaused': isPaused,
       };
 
   factory AppUser.fromMap(Map<String, dynamic> map) => AppUser(
@@ -164,6 +181,10 @@ class AppUser {
         emergencyContacts: (map['emergencyContacts'] as List<dynamic>? ?? const [])
             .map((e) => Map<String, String>.from(e as Map))
             .toList(),
+        profilePhotos: (map['profilePhotos'] as List<dynamic>? ?? const <dynamic>[])
+            .map((e) => e.toString())
+            .toList(),
+        isPaused: map['isPaused'] as bool? ?? false,
       );
 
   String toJson() => jsonEncode(toMap());

@@ -5,8 +5,9 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import 'checkout_screen.dart';
 
-/// Three-tier subscription plan screen.
+/// Three-tier subscription plan screen with Payment checkout integration.
 class RovloPlusScreen extends StatelessWidget {
   const RovloPlusScreen({super.key});
 
@@ -19,17 +20,21 @@ class RovloPlusScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rovlo Plus'),
+        title: const Text('Rovlo Plus', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          onPressed: () => Navigator.maybePop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header Card
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -55,7 +60,7 @@ class RovloPlusScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Get more out of Rovlo with premium features.',
+                    'Unlock unlimited traveler matches & VIP perks.',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.85),
                       fontSize: 14,
@@ -69,10 +74,9 @@ class RovloPlusScreen extends StatelessWidget {
             // Free Tier
             _PlanCard(
               title: 'Free',
-              subtitle: '🎁 Limited Time Offer',
+              subtitle: '🎁 Basic Traveler Access',
               price: '₹0',
-              originalPrice: '₹199',
-              period: 'limited offer',
+              period: 'forever',
               features: const [
                 'Basic profile',
                 'View nearby travelers',
@@ -81,11 +85,11 @@ class RovloPlusScreen extends StatelessWidget {
               ],
               isCurrentPlan: currentTier == 'free',
               color: Colors.grey.shade600,
-              onSelect: () => _selectPlan(context, provider, 'free'),
+              onSelect: () => _openPaymentModal(context, provider, 'free', 'Free Plan', 0),
             ).animate(delay: 100.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 16),
 
-            // Plus Tier (Updated from 99 to 199)
+            // Plus Tier (₹199)
             _PlanCard(
               title: 'Plus',
               price: '₹199',
@@ -100,26 +104,26 @@ class RovloPlusScreen extends StatelessWidget {
               isCurrentPlan: currentTier == 'plus199',
               color: primaryPeach,
               isPopular: true,
-              onSelect: () => _selectPlan(context, provider, 'plus199'),
+              onSelect: () => _openPaymentModal(context, provider, 'plus199', 'Plus Tier', 199),
             ).animate(delay: 200.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 16),
 
-            // Premium Tier
+            // Premium Tier (₹499 / mo)
             _PlanCard(
-              title: 'Premium',
-              price: '₹299',
+              title: 'Premium VIP',
+              price: '₹499',
               period: '/month',
               features: const [
                 'Everything in Plus',
-                'Unlimited likes',
-                'Profile boost (2x visibility)',
+                'Unlimited likes & instant match',
+                'Profile boost (5x visibility)',
                 'Travel companion matching',
-                'Priority customer support',
+                'Priority 24/7 customer support',
                 'Ad-free experience',
               ],
-              isCurrentPlan: currentTier == 'plus299',
+              isCurrentPlan: currentTier == 'plus499' || currentTier == 'plus299',
               color: Colors.amber.shade700,
-              onSelect: () => _selectPlan(context, provider, 'plus299'),
+              onSelect: () => _openPaymentModal(context, provider, 'plus499', 'Premium VIP Tier', 499),
             ).animate(delay: 300.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 24),
           ],
@@ -128,14 +132,223 @@ class RovloPlusScreen extends StatelessWidget {
     );
   }
 
-  void _selectPlan(BuildContext context, AuthProvider provider, String tier) async {
-    await provider.setSubscriptionTier(tier);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(tier == 'free'
-            ? 'Switched to Free plan.'
-            : 'Subscribed to ${tier == 'plus199' ? 'Plus' : 'Premium'} plan! 🎉'),
+  void _openPaymentModal(
+    BuildContext context,
+    AuthProvider provider,
+    String tier,
+    String planName,
+    int amount,
+  ) {
+    if (amount == 0) {
+      provider.setSubscriptionTier('free');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Switched to Free plan.')),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CheckoutScreen(
+          tier: tier,
+          planName: planName,
+          amount: amount,
+        ),
+      ),
+    );
+  }
+}
+
+class _PaymentModal extends StatefulWidget {
+  final String planName;
+  final int amount;
+  final VoidCallback onPaymentSuccess;
+
+  const _PaymentModal({
+    required this.planName,
+    required this.amount,
+    required this.onPaymentSuccess,
+  });
+
+  @override
+  State<_PaymentModal> createState() => _PaymentModalState();
+}
+
+class _PaymentModalState extends State<_PaymentModal> {
+  String _selectedMethod = 'upi';
+  final _upiController = TextEditingController(text: 'traveler@upi');
+  final _cardNumberController = TextEditingController(text: '4532 •••• •••• 8892');
+  bool _processing = false;
+
+  @override
+  void dispose() {
+    _upiController.dispose();
+    _cardNumberController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _payNow() async {
+    setState(() => _processing = true);
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+    widget.onPaymentSuccess();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Complete Payment',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.planName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                Text(
+                  '₹${widget.amount} / month',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Select Payment Method',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+
+          // Payment Options
+          RadioListTile<String>(
+            value: 'upi',
+            groupValue: _selectedMethod,
+            onChanged: (val) => setState(() => _selectedMethod = val!),
+            title: const Row(
+              children: [
+                Icon(Icons.qr_code_2, color: Colors.purple),
+                SizedBox(width: 10),
+                Text('UPI (GPay / PhonePe / Paytm)', style: TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          if (_selectedMethod == 'upi')
+            Padding(
+              padding: const EdgeInsets.only(left: 48, right: 16, bottom: 12),
+              child: TextField(
+                controller: _upiController,
+                decoration: const InputDecoration(
+                  labelText: 'UPI ID',
+                  hintText: 'username@upi',
+                  prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                ),
+              ),
+            ),
+
+          RadioListTile<String>(
+            value: 'card',
+            groupValue: _selectedMethod,
+            onChanged: (val) => setState(() => _selectedMethod = val!),
+            title: const Row(
+              children: [
+                Icon(Icons.credit_card, color: Colors.blue),
+                SizedBox(width: 10),
+                Text('Credit / Debit Card', style: TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          if (_selectedMethod == 'card')
+            Padding(
+              padding: const EdgeInsets.only(left: 48, right: 16, bottom: 12),
+              child: TextField(
+                controller: _cardNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Card Number',
+                  prefixIcon: Icon(Icons.payment),
+                ),
+              ),
+            ),
+
+          RadioListTile<String>(
+            value: 'netbanking',
+            groupValue: _selectedMethod,
+            onChanged: (val) => setState(() => _selectedMethod = val!),
+            title: const Row(
+              children: [
+                Icon(Icons.account_balance, color: Colors.green),
+                SizedBox(width: 10),
+                Text('Net Banking', style: TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _processing ? null : _payNow,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: _processing
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                    )
+                  : Text(
+                      'Pay ₹${widget.amount} & Activate',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

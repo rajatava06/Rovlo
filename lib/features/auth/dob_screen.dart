@@ -90,8 +90,8 @@ class _DobScreenState extends State<DobScreen> {
     final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
 
     return OnboardingScaffold(
-      step: 4,
-      totalSteps: 6,
+      step: 5,
+      totalSteps: 7,
       title: 'When were you born?',
       subtitle: 'We use this to verify your age. You must be 16 or older.',
       continueEnabled: _valid,

@@ -50,18 +50,46 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
       _inFlight = provider;
       _error = null;
     });
+
     final auth = context.read<AuthProvider>();
+
     try {
-      final user = provider == _Provider.google
-          ? await auth.signInWithGoogle()
-          : await auth.signInWithApple();
-      if (!mounted || user == null) return;
+      AppUser? user;
+
+      switch (provider) {
+        case _Provider.google:
+          user = await auth.signInWithGoogle();
+          break;
+        case _Provider.apple:
+          user = await auth.signInWithApple();
+          break;
+        case _Provider.demo:
+          user = await auth.signInDemo();
+          break;
+      }
+
+      if (!mounted) return;
+
+      if (user == null) {
+        // User cancelled the sign-in picker
+        setState(() => _inFlight = null);
+        return;
+      }
+
       _routeAfterAuth(user);
     } catch (e) {
       if (!mounted) return;
+      final errorMsg = e.toString();
       setState(() {
         _inFlight = null;
-        _error = e.toString();
+        if (errorMsg.contains('popup_closed') ||
+            errorMsg.contains('canceled')) {
+          _error = 'Sign-in was cancelled before completing.';
+        } else if (errorMsg.contains('network')) {
+          _error = 'Network error. Please check your connection and try again.';
+        } else {
+          _error = 'Sign-in failed: $errorMsg';
+        }
       });
     }
   }
@@ -140,13 +168,54 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                         : () => _authenticate(_Provider.google),
                   ).animate(delay: 300.ms).fadeIn().slideY(begin: 0.3),
                   const SizedBox(height: 14),
-                  if (_appleAvailable)
+                  if (_appleAvailable) ...[
                     SocialButton.apple(
                       loading: _inFlight == _Provider.apple,
                       onPressed: _inFlight != null
                           ? null
                           : () => _authenticate(_Provider.apple),
                     ).animate(delay: 380.ms).fadeIn().slideY(begin: 0.3),
+                    const SizedBox(height: 14),
+                  ],
+                  // Demo Sign-In Option
+                  OutlinedButton(
+                    onPressed: _inFlight != null
+                        ? null
+                        : () => _authenticate(_Provider.demo),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white38, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(double.infinity, 54),
+                    ),
+                    child: _inFlight == _Provider.demo
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.developer_mode_outlined, size: 20),
+                              SizedBox(width: 10),
+                              Text(
+                                'Explore with Demo Account',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ).animate(delay: 450.ms).fadeIn().slideY(begin: 0.3),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     _ErrorBanner(message: _error!),
@@ -169,7 +238,7 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
   }
 }
 
-enum _Provider { google, apple }
+enum _Provider { google, apple, demo }
 
 class _ErrorBanner extends StatelessWidget {
   const _ErrorBanner({required this.message});

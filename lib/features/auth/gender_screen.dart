@@ -30,14 +30,14 @@ class _GenderScreenState extends State<GenderScreen> {
     if (_selected == null) return;
     await context.read<AuthProvider>().setGender(_selected!);
     if (!mounted) return;
-    Navigator.pushNamed(context, Routes.dob);
+    Navigator.pushNamed(context, Routes.photos);
   }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
       step: 3,
-      totalSteps: 6,
+      totalSteps: 7,
       title: 'How do you identify?',
       subtitle: 'Helps us tailor recommendations. You can change this later.',
       continueEnabled: _selected != null,

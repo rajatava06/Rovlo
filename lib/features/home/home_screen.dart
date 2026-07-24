@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import 'explore_tab.dart';
 import 'profile_tab.dart';
 import 'maps_tab.dart';
@@ -19,6 +22,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 2; // Default to Discover (index 2)
+  StreamSubscription<String>? _notificationSub;
+  String? _bannerText;
+  bool _showBanner = false;
 
   @override
   void initState() {
@@ -27,6 +33,29 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => context.read<AuthProvider>().refreshCurrentUser(),
     );
+
+    // Listen for incoming dynamic notifications from ChatProvider
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    _notificationSub = chatProvider.notificationStream.listen((msg) {
+      if (!mounted) return;
+      setState(() {
+        _bannerText = msg;
+        _showBanner = true;
+      });
+      // Auto hide notification banner after 4 seconds
+      Future.delayed(const Duration(seconds: 4), () {
+        if (!mounted) return;
+        setState(() {
+          _showBanner = false;
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationSub?.cancel();
+    super.dispose();
   }
 
   Widget _buildNavItem({
@@ -169,22 +198,94 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final chatProvider = context.watch<ChatProvider>();
+    final hasUnread = chatProvider.hasUnreadMessages;
 
     return Scaffold(
-      body: SafeArea(
-        top: true,
-        bottom: false,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: child,
+      body: Stack(
+        children: [
+          // If Maps tab (index 0), render full screen without top SafeArea padding
+          Positioned.fill(
+            child: _index == 0
+                ? const MapsTab()
+                : SafeArea(
+                    top: true,
+                    bottom: false,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey(_index),
+                        child: tabs[_index],
+                      ),
+                    ),
+                  ),
           ),
-          child: KeyedSubtree(
-            key: ValueKey(_index),
-            child: tabs[_index],
-          ),
-        ),
+
+          // ── In-App Heads-up Notification Banner ──
+          if (_showBanner && _bannerText != null)
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                child: Material(
+                  elevation: 10,
+                  borderRadius: BorderRadius.circular(16),
+                  color: isDark ? AppColors.darkCard : Colors.white,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: primaryPeach.withValues(alpha: 0.25),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.chat_bubble, color: primaryPeach, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'New Notification',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _bannerText!,
+                                style: TextStyle(fontSize: 12, color: context.rovlo.textSecondary),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            setState(() {
+                              _showBanner = false;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ).animate().slideY(begin: -1.0, end: 0.0, duration: 300.ms, curve: Curves.easeOutQuad).fadeIn(),
+        ],
       ),
       bottomNavigationBar: Container(
         height: 88,
@@ -231,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.chat_bubble_outline,
                   selectedIcon: Icons.chat_bubble,
                   label: 'Chats',
-                  showDot: true, // dot indicator for new messages
+                  showDot: hasUnread,
                 ),
                 _buildNavItem(
                   index: 4,
@@ -267,7 +368,7 @@ class _HotComingSoon extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: primaryPeach.withOpacity(0.12),
+                  color: primaryPeach.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(Icons.whatshot, color: primaryPeach, size: 64),
