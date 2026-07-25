@@ -1,12 +1,6 @@
-// File generated manually — replace with `flutterfire configure` output.
-// See: https://firebase.google.com/docs/flutter/setup
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// HOW TO REGENERATE:
-//   1. Run `firebase login` in your terminal (interactive).
-//   2. Run `flutterfire configure` in the project root.
-//   3. This file will be overwritten with the correct values.
-// ─────────────────────────────────────────────────────────────────────────────
+// Firebase configuration for Rovlo.
+// Project: ai-studio-applet-webapp-1b0fc
+// Generated from Firebase Console values.
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
@@ -25,7 +19,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.macOS:
         return macos;
       case TargetPlatform.windows:
-        return web; // fallback for desktop dev
+        return windows;
       case TargetPlatform.linux:
         return web;
       default:
@@ -35,44 +29,47 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // REPLACE the values below with the output of `flutterfire configure`.
-  // The placeholder values below will NOT work — they are just structural
-  // scaffolding so the app compiles.
-  // ──────────────────────────────────────────────────────────────────────────
-
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: '1:000000000000:web:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'rovlo-app',
-    authDomain: 'rovlo-app.firebaseapp.com',
-    storageBucket: 'rovlo-app.firebasestorage.app',
+    apiKey: 'AIzaSyA5I57hoaGEori0e_iaw2yQFabw1bZC0Oo',
+    appId: '1:593111392034:web:1f9f81ae90cfc404e64f7b',
+    messagingSenderId: '593111392034',
+    projectId: 'ai-studio-applet-webapp-1b0fc',
+    authDomain: 'ai-studio-applet-webapp-1b0fc.firebaseapp.com',
+    storageBucket: 'ai-studio-applet-webapp-1b0fc.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_ANDROID_API_KEY',
-    appId: '1:000000000000:android:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'rovlo-app',
-    storageBucket: 'rovlo-app.firebasestorage.app',
+    apiKey: 'AIzaSyA5I57hoaGEori0e_iaw2yQFabw1bZC0Oo',
+    appId: '1:593111392034:android:0d6e82151473182de64f7b',
+    messagingSenderId: '593111392034',
+    projectId: 'ai-studio-applet-webapp-1b0fc',
+    storageBucket: 'ai-studio-applet-webapp-1b0fc.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'rovlo-app',
-    storageBucket: 'rovlo-app.firebasestorage.app',
+    apiKey: 'AIzaSyA5I57hoaGEori0e_iaw2yQFabw1bZC0Oo',
+    appId: '1:593111392034:ios:d54e1519a5872c8be64f7b',
+    messagingSenderId: '593111392034',
+    projectId: 'ai-studio-applet-webapp-1b0fc',
+    storageBucket: 'ai-studio-applet-webapp-1b0fc.firebasestorage.app',
     iosBundleId: 'com.example.rovlo',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'YOUR_MACOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'rovlo-app',
-    storageBucket: 'rovlo-app.firebasestorage.app',
+    apiKey: 'AIzaSyA5I57hoaGEori0e_iaw2yQFabw1bZC0Oo',
+    appId: '1:593111392034:ios:d54e1519a5872c8be64f7b',
+    messagingSenderId: '593111392034',
+    projectId: 'ai-studio-applet-webapp-1b0fc',
+    storageBucket: 'ai-studio-applet-webapp-1b0fc.firebasestorage.app',
     iosBundleId: 'com.example.rovlo',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyA5I57hoaGEori0e_iaw2yQFabw1bZC0Oo',
+    appId: '1:593111392034:web:1252292c4cbcf639e64f7b',
+    messagingSenderId: '593111392034',
+    projectId: 'ai-studio-applet-webapp-1b0fc',
+    authDomain: 'ai-studio-applet-webapp-1b0fc.firebaseapp.com',
+    storageBucket: 'ai-studio-applet-webapp-1b0fc.firebasestorage.app',
   );
 }
