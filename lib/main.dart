@@ -23,17 +23,21 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // ── Initialize Firebase (graceful — app works without it) ──────────────
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    firebaseInitialized = true;
-    debugPrint('[Rovlo] Firebase initialized successfully.');
-  } catch (e) {
+  // ── Initialize Firebase (only when secrets are injected via .env) ─────────
+  if (DefaultFirebaseOptions.isConfigured) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      firebaseInitialized = true;
+      debugPrint('[Rovlo] Firebase initialized successfully.');
+    } catch (e) {
+      firebaseInitialized = false;
+      debugPrint('[Rovlo] Firebase initialization failed: $e');
+    }
+  } else {
     firebaseInitialized = false;
-    debugPrint('[Rovlo] Firebase initialization failed: $e');
-    debugPrint('[Rovlo] App will continue without Firebase Auth.');
+    debugPrint('[Rovlo] Firebase secrets not found — run with --dart-define-from-file=.env');
   }
   // ─────────────────────────────────────────────────────────────────────────
 

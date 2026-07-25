@@ -43,3 +43,5 @@ lib/generated_plugin_registrant.dart
 
 # Env / secrets
 .env
+.env.local
+.env.*.local

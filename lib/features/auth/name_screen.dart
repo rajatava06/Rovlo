@@ -37,6 +37,12 @@ class _NameScreenState extends State<NameScreen> {
     Navigator.pushNamed(context, Routes.gender);
   }
 
+  Future<void> _goBack() async {
+    await context.read<AuthProvider>().signOut();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, Routes.welcome, (route) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
@@ -46,6 +52,7 @@ class _NameScreenState extends State<NameScreen> {
       subtitle: 'This is the name fellow travellers and hosts will see.',
       continueEnabled: _valid,
       onContinue: _continue,
+      onBack: _goBack,
       child: TextField(
         controller: _controller,
         autofocus: true,
