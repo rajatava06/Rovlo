@@ -32,10 +32,10 @@ class WelcomeScreen extends StatelessWidget {
                         .fadeIn(duration: 700.ms, delay: 150.ms)
                         .slideY(begin: 0.2, curve: Curves.easeOutCubic),
                     const SizedBox(height: 12),
-                    Text(
+                    const Text(
                       AppConstants.tagline,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         letterSpacing: 0.3,

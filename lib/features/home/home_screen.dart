@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/notification_service.dart';
 import 'explore_tab.dart';
 import 'profile_tab.dart';
 import 'maps_tab.dart';
@@ -23,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 2; // Default to Discover (index 2)
   StreamSubscription<String>? _notificationSub;
+  StreamSubscription? _adminNotifSub;
   String? _bannerText;
   bool _showBanner = false;
 
@@ -50,11 +52,27 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       });
     });
+
+    // Listen for admin custom push notifications
+    _adminNotifSub = NotificationService().onNotification.listen((notif) {
+      if (!mounted) return;
+      setState(() {
+        _bannerText = '${notif.title}: ${notif.body}';
+        _showBanner = true;
+      });
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        setState(() {
+          _showBanner = false;
+        });
+      });
+    });
   }
 
   @override
   void dispose() {
     _notificationSub?.cancel();
+    _adminNotifSub?.cancel();
     super.dispose();
   }
 
