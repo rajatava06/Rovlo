@@ -44,13 +44,14 @@ class AuthService {
   final Random _random = Random();
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
-  /// Google Sign-In instance. On Web, it requires the clientId. On Android,
-  /// the plugin automatically resolves the OAuth client ID using the app's
-  /// registered package name and SHA-1 fingerprint.
+  static const String _webClientId =
+      '593111392034-iiukhf2sj66e6kos1i2fkpmsdmjc5mp5.apps.googleusercontent.com';
+
+  /// Google Sign-In instance. On Web, it requires clientId. On Android,
+  /// serverClientId ensures Google issues an idToken compatible with Firebase Auth.
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: kIsWeb
-        ? '116216537572-1s0gl51bftehu9prmd4i2m8h1p7ff46i.apps.googleusercontent.com'
-        : null,
+    clientId: kIsWeb ? _webClientId : null,
+    serverClientId: _webClientId,
     scopes: ['email', 'profile'],
   );
 

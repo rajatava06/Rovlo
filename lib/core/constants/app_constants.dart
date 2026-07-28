@@ -22,6 +22,7 @@ class AppConstants {
   /// to the Admin Panel. Change / add emails as needed — this is the single
   /// place that controls admin rights.
   static const List<String> adminEmails = <String>[
+    'rajatava2006@gmail.com',
     'hellorovlo2026@gmail.com',
   ];
 

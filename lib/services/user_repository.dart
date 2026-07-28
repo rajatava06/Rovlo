@@ -91,14 +91,20 @@ class UserRepository {
   Future<Map<String, int>> stats() async {
     final users = await getAllUsers();
     final now = DateTime.now();
-    final activeToday = users
+    final newToday = users
         .where((u) => now.difference(u.createdAt).inDays == 0)
         .length;
+    final active = users.where((u) => !u.isBlocked && !u.isPaused).length;
+    final blocked = users.where((u) => u.isBlocked).length;
+    final verified = users.where((u) => u.isVerified).length;
+    final complete = users.where((u) => u.profileComplete).length;
     return {
       'total': users.length,
-      'complete': users.where((u) => u.profileComplete).length,
-      'blocked': users.where((u) => u.isBlocked).length,
-      'newToday': activeToday,
+      'active': active,
+      'blocked': blocked,
+      'verified': verified,
+      'complete': complete,
+      'newToday': newToday,
     };
   }
 
