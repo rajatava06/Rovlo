@@ -9,6 +9,7 @@ import 'core/theme/theme_provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'services/push_notification_service.dart';
 
 /// Whether Firebase was successfully initialized.
 /// AuthProvider checks this to decide whether to use Firebase Auth or fallback.
@@ -31,6 +32,9 @@ Future<void> main() async {
       );
       firebaseInitialized = true;
       debugPrint('[Rovlo] Firebase initialized successfully.');
+
+      // Initialize Push Notification Service (FCM)
+      await PushNotificationService().initialize();
     } catch (e) {
       firebaseInitialized = false;
       debugPrint('[Rovlo] Firebase initialization failed: $e');

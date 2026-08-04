@@ -60,8 +60,8 @@ class RovloLogo extends StatelessWidget {
               borderRadius: BorderRadius.circular(fontSize * 0.22),
               child: Image.asset(
                 'assets/images/rovlo_logo.jpg',
-                width: fontSize * 1.15,
-                height: fontSize * 1.15,
+                width: fontSize * 1.5,
+                height: fontSize * 1.5,
                 fit: BoxFit.cover,
               ),
             ),

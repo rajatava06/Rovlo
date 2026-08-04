@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../main.dart' show firebaseInitialized;
 import '../models/app_user.dart';
 import 'user_repository.dart';
 
@@ -42,7 +43,9 @@ class AuthService {
 
   final UserRepository _users;
   final Random _random = Random();
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+
+  FirebaseAuth? get _firebaseAuth =>
+      firebaseInitialized ? FirebaseAuth.instance : null;
 
   static const String _webClientId =
       '593111392034-iiukhf2sj66e6kos1i2fkpmsdmjc5mp5.apps.googleusercontent.com';
@@ -56,10 +59,11 @@ class AuthService {
   );
 
   /// Returns the currently signed-in Firebase user, or null.
-  User? get firebaseCurrentUser => _firebaseAuth.currentUser;
+  User? get firebaseCurrentUser => _firebaseAuth?.currentUser;
 
   /// Stream of auth state changes (sign-in / sign-out events).
-  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+  Stream<User?> get authStateChanges =>
+      _firebaseAuth?.authStateChanges() ?? const Stream<User?>.empty();
 
   // ---------------------------------------------------------------------------
   // Phone
@@ -109,23 +113,34 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase with the Google credential
-      final UserCredential userCredential =
-          await _firebaseAuth.signInWithCredential(credential);
+      if (_firebaseAuth != null) {
+        // Sign in to Firebase with the Google credential
+        final UserCredential userCredential =
+            await _firebaseAuth!.signInWithCredential(credential);
 
-      final User? firebaseUser = userCredential.user;
-      if (firebaseUser == null) return null;
+        final User? firebaseUser = userCredential.user;
+        if (firebaseUser == null) return null;
 
-      return SocialAuthResult(
-        email: firebaseUser.email ?? account.email,
-        name: firebaseUser.displayName ??
-            account.displayName ??
-            account.email.split('@').first,
-        photoUrl: firebaseUser.photoURL ??
-            account.photoUrl ??
-            'https://api.dicebear.com/7.x/avataaars/png?seed=${account.email}',
-        firebaseUid: firebaseUser.uid,
-      );
+        return SocialAuthResult(
+          email: firebaseUser.email ?? account.email,
+          name: firebaseUser.displayName ??
+              account.displayName ??
+              account.email.split('@').first,
+          photoUrl: firebaseUser.photoURL ??
+              account.photoUrl ??
+              'https://api.dicebear.com/7.x/avataaars/png?seed=${account.email}',
+          firebaseUid: firebaseUser.uid,
+        );
+      } else {
+        // Fallback when Firebase is not initialized
+        return SocialAuthResult(
+          email: account.email,
+          name: account.displayName ?? account.email.split('@').first,
+          photoUrl: account.photoUrl ??
+              'https://api.dicebear.com/7.x/avataaars/png?seed=${account.email}',
+          firebaseUid: 'local_${account.id}',
+        );
+      }
     } catch (e) {
       rethrow;
     }
@@ -170,33 +185,45 @@ class AuthService {
         nonce: nonce,
       );
 
-      // Create an OAuthCredential for Firebase
-      final oauthCredential = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        rawNonce: rawNonce,
-      );
+      if (_firebaseAuth != null) {
+        // Create an OAuthCredential for Firebase
+        final oauthCredential = OAuthProvider('apple.com').credential(
+          idToken: appleCredential.identityToken,
+          rawNonce: rawNonce,
+        );
 
-      // Sign in to Firebase
-      final UserCredential userCredential =
-          await _firebaseAuth.signInWithCredential(oauthCredential);
+        // Sign in to Firebase
+        final UserCredential userCredential =
+            await _firebaseAuth!.signInWithCredential(oauthCredential);
 
-      final User? firebaseUser = userCredential.user;
-      if (firebaseUser == null) return null;
+        final User? firebaseUser = userCredential.user;
+        if (firebaseUser == null) return null;
 
-      // Apple only sends name on first sign-in; use Firebase's cached version
-      final String? displayName = appleCredential.givenName != null
-          ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
-              .trim()
-          : firebaseUser.displayName;
+        // Apple only sends name on first sign-in; use Firebase's cached version
+        final String? displayName = appleCredential.givenName != null
+            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
+                .trim()
+            : firebaseUser.displayName;
 
-      return SocialAuthResult(
-        email: firebaseUser.email ??
-            appleCredential.email ??
-            '${firebaseUser.uid}@privaterelay.appleid.com',
-        name: displayName ?? firebaseUser.email?.split('@').first,
-        photoUrl: firebaseUser.photoURL,
-        firebaseUid: firebaseUser.uid,
-      );
+        return SocialAuthResult(
+          email: firebaseUser.email ??
+              appleCredential.email ??
+              '${firebaseUser.uid}@privaterelay.appleid.com',
+          name: displayName ?? firebaseUser.email?.split('@').first,
+          photoUrl: firebaseUser.photoURL,
+          firebaseUid: firebaseUser.uid,
+        );
+      } else {
+        final String? displayName = appleCredential.givenName != null
+            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
+                .trim()
+            : null;
+        return SocialAuthResult(
+          email: appleCredential.email ?? 'apple.user@rovlo.app',
+          name: displayName ?? 'Apple User',
+          firebaseUid: 'local_apple_${DateTime.now().millisecondsSinceEpoch}',
+        );
+      }
     } on SignInWithAppleAuthorizationException catch (e) {
       if (e.code == AuthorizationErrorCode.canceled) {
         return null; // User cancelled
@@ -214,7 +241,9 @@ class AuthService {
   /// Signs out from Firebase and Google.
   Future<void> signOut() async {
     await _googleSignIn.signOut().catchError((_) => null);
-    await _firebaseAuth.signOut();
+    if (_firebaseAuth != null) {
+      await _firebaseAuth!.signOut();
+    }
   }
 
   // ---------------------------------------------------------------------------
