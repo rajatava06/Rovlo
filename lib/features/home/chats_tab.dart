@@ -197,14 +197,17 @@ class ChatsTab extends StatelessWidget {
                             children: [
                               if (conv.contactName == 'Rovlo')
                                 Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFFFF6B35),
+                                  width: 56,
+                                  height: 56,
+                                  padding: const EdgeInsets.all(11),
+                                  decoration: BoxDecoration(
+                                    color: primaryPeach,
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const CircleAvatar(
-                                    radius: 25,
-                                    backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
+                                  child: Image.asset(
+                                    'assets/images/rovlo_icon.png',
+                                    color: Colors.white,
+                                    fit: BoxFit.contain,
                                   ),
                                 )
                               else

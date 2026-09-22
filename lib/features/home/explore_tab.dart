@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/rovlo_logo.dart';
 import '../../models/traveler.dart';
 import 'traveler_profile_screen.dart';
 
@@ -26,7 +29,12 @@ class _ExploreTabState extends State<ExploreTab> {
   String _selectedYear = '2026';
 
   String _getFormattedDateCompact() {
-    final wkShort = _selectedWeek.replaceAll(' Week', 'W').replaceAll('st', '').replaceAll('nd', '').replaceAll('rd', '').replaceAll('th', '');
+    final wkShort = _selectedWeek
+        .replaceAll(' Week', 'W')
+        .replaceAll('st', '')
+        .replaceAll('nd', '')
+        .replaceAll('rd', '')
+        .replaceAll('th', '');
     return '$_selectedMonth $wkShort';
   }
 
@@ -243,7 +251,12 @@ class _ExploreTabState extends State<ExploreTab> {
                         child: _DatePickerDropdown(
                           label: 'Week',
                           value: _selectedWeek,
-                          items: const ['1st Week', '2nd Week', '3rd Week', '4th Week'],
+                          items: const [
+                            '1st Week',
+                            '2nd Week',
+                            '3rd Week',
+                            '4th Week'
+                          ],
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _selectedWeek = val);
@@ -258,7 +271,20 @@ class _ExploreTabState extends State<ExploreTab> {
                         child: _DatePickerDropdown(
                           label: 'Month',
                           value: _selectedMonth,
-                          items: const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                          items: const [
+                            'Jan',
+                            'Feb',
+                            'Mar',
+                            'Apr',
+                            'May',
+                            'Jun',
+                            'Jul',
+                            'Aug',
+                            'Sep',
+                            'Oct',
+                            'Nov',
+                            'Dec'
+                          ],
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _selectedMonth = val);
@@ -291,10 +317,16 @@ class _ExploreTabState extends State<ExploreTab> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(ctx),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isDark ? AppColors.primaryVibrantDark : AppColors.primary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        backgroundColor: isDark
+                            ? AppColors.primaryVibrantDark
+                            : AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
                       ),
-                      child: const Text('Confirm Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      child: const Text('Confirm Date',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],
@@ -366,7 +398,8 @@ class _ExploreTabState extends State<ExploreTab> {
                                 color: Colors.red.shade400,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(Icons.delete, color: Colors.white),
+                              child:
+                                  const Icon(Icons.delete, color: Colors.white),
                             ),
                             onDismissed: (_) async {
                               final itemId = item['id'] as String;
@@ -378,7 +411,8 @@ class _ExploreTabState extends State<ExploreTab> {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Notification permanently dismissed'),
+                                    content: Text(
+                                        'Notification permanently dismissed'),
                                     duration: Duration(milliseconds: 800),
                                   ),
                                 );
@@ -410,7 +444,8 @@ class _ExploreTabState extends State<ExploreTab> {
     final textSecColor = context.rovlo.textSecondary;
     final cardColor = context.rovlo.card;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final primaryPeach =
+        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
 
     return Column(
       children: [
@@ -422,17 +457,9 @@ class _ExploreTabState extends State<ExploreTab> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(left: 8.0),
-                child: Text(
-                  'Rovlo',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: isDark
-                        ? AppColors.primaryVibrantDark
-                        : AppColors.elementBlack,
-                    letterSpacing: -0.5,
-                  ),
+                child: RovloLogo(
+                  fontSize: 26,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
                 ),
               ),
               Stack(
@@ -486,7 +513,8 @@ class _ExploreTabState extends State<ExploreTab> {
                 AnimatedAlign(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeInOut,
-                  alignment: _isNearMe ? Alignment.centerLeft : Alignment.centerRight,
+                  alignment:
+                      _isNearMe ? Alignment.centerLeft : Alignment.centerRight,
                   child: FractionallySizedBox(
                     widthFactor: 0.5,
                     heightFactor: 1.0,
@@ -529,7 +557,8 @@ class _ExploreTabState extends State<ExploreTab> {
                             'Feed',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: _isNearMe ? AppColors.accent : textSecColor,
+                              color:
+                                  _isNearMe ? AppColors.accent : textSecColor,
                               fontSize: 14,
                             ),
                           ),
@@ -549,7 +578,8 @@ class _ExploreTabState extends State<ExploreTab> {
                             'Going to...',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: !_isNearMe ? AppColors.accent : textSecColor,
+                              color:
+                                  !_isNearMe ? AppColors.accent : textSecColor,
                               fontSize: 14,
                             ),
                           ),
@@ -580,7 +610,8 @@ class _ExploreTabState extends State<ExploreTab> {
                           onChanged: _onSearchChanged,
                           decoration: InputDecoration(
                             hintText: 'Search destinations...',
-                            prefixIcon: const Icon(Icons.search, color: AppColors.accent),
+                            prefixIcon: const Icon(Icons.search,
+                                color: AppColors.accent),
                             suffixIcon: _query.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear),
@@ -598,7 +629,9 @@ class _ExploreTabState extends State<ExploreTab> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: isDark ? AppColors.darkCard : Colors.grey.shade100,
+                            color: isDark
+                                ? AppColors.darkCard
+                                : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isDark ? Colors.white10 : Colors.black12,
@@ -607,7 +640,8 @@ class _ExploreTabState extends State<ExploreTab> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.calendar_today, size: 14, color: AppColors.accent),
+                              const Icon(Icons.calendar_today,
+                                  size: 14, color: AppColors.accent),
                               const SizedBox(width: 6),
                               Text(
                                 _getFormattedDateCompact(),
@@ -646,7 +680,8 @@ class _ExploreTabState extends State<ExploreTab> {
                       itemBuilder: (context, idx) {
                         final item = _suggestions[idx];
                         return ListTile(
-                          leading: const Icon(Icons.location_on_outlined, color: AppColors.primary),
+                          leading: const Icon(Icons.location_on_outlined,
+                              color: AppColors.primary),
                           title: Text(item),
                           onTap: () => _selectSuggestion(item),
                         );
@@ -680,17 +715,20 @@ class _ExploreTabState extends State<ExploreTab> {
                     children: [
                       _DestinationCard(
                         name: 'Bali',
-                        image: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=400&q=80',
+                        image:
+                            'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=400&q=80',
                         onTap: () => _selectSuggestion('Bali, Indonesia'),
                       ),
                       _DestinationCard(
                         name: 'Barcelona',
-                        image: 'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=400&q=80',
+                        image:
+                            'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=400&q=80',
                         onTap: () => _selectSuggestion('Barcelona, Spain'),
                       ),
                       _DestinationCard(
                         name: 'Kyoto',
-                        image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=400&q=80',
+                        image:
+                            'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=400&q=80',
                         onTap: () => _selectSuggestion('Kyoto, Japan'),
                       ),
                     ],
@@ -717,11 +755,13 @@ class _ExploreTabState extends State<ExploreTab> {
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                 decoration: BoxDecoration(
                   color: primaryPeach.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: primaryPeach.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: primaryPeach.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -731,7 +771,9 @@ class _ExploreTabState extends State<ExploreTab> {
                     Text(
                       'Save this Trip to My Profile',
                       style: TextStyle(
-                        color: isDark ? AppColors.secondary : AppColors.primaryDark,
+                        color: isDark
+                            ? AppColors.secondary
+                            : AppColors.primaryDark,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       ),
@@ -756,7 +798,8 @@ class _ExploreTabState extends State<ExploreTab> {
                   traveler: _currentTraveler!,
                   photoPageController: _photoPageController,
                   currentPhotoPage: _currentPhotoPage,
-                  onPhotoPageChanged: (i) => setState(() => _currentPhotoPage = i),
+                  onPhotoPageChanged: (i) =>
+                      setState(() => _currentPhotoPage = i),
                   onReject: () => _nextProfile('reject'),
                   onLike: () => _nextProfile('like'),
                   onSave: () => _nextProfile('save'),
@@ -798,10 +841,11 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final primaryPeach =
+        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 76),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         color: isDark ? AppColors.darkCard : Colors.white,
@@ -823,7 +867,6 @@ class _ProfileCard extends StatelessWidget {
         children: [
           // ── Photo Section (Scrollable horizontally) ─────────────────────
           Expanded(
-            flex: 5,
             child: GestureDetector(
               onTap: onTapProfile,
               child: Stack(
@@ -890,7 +933,8 @@ class _ProfileCard extends StatelessWidget {
                     top: 24,
                     right: 16,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(16),
@@ -984,7 +1028,9 @@ class _ProfileCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                traveler.about.isNotEmpty ? traveler.about : traveler.description,
+                                traveler.about.isNotEmpty
+                                    ? traveler.about
+                                    : traveler.description,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -998,7 +1044,8 @@ class _ProfileCard extends StatelessWidget {
                             GestureDetector(
                               onTap: onTapProfile,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: Colors.white24,
                                   borderRadius: BorderRadius.circular(10),
@@ -1023,43 +1070,66 @@ class _ProfileCard extends StatelessWidget {
             ),
           ),
 
-          // ── Action Buttons (Reject / Like / Save) ─────────────────────
+          // ── Action Buttons Row (Above Floating Navbar) ───────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 // Reject (X)
                 _ActionButton(
-                  icon: Icons.close,
+                  icon: Icons.close_rounded,
                   color: Colors.red.shade400,
-                  size: 52,
-                  iconSize: 26,
-                  onTap: onReject,
+                  size: 48,
+                  iconSize: 24,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    onReject();
+                  },
                 ),
+                // // Superlike (Star)
+                // _ActionButton(
+                //   icon: Icons.star_rounded,
+                //   color: Colors.amber.shade600,
+                //   size: 42,
+                //   iconSize: 22,
+                //   onTap: () {
+                //     HapticFeedback.lightImpact();
+                //     onSave();
+                //   },
+                // ),
                 // Like (Heart)
                 _ActionButton(
-                  icon: Icons.favorite,
+                  icon: Icons.favorite_rounded,
                   color: primaryPeach,
-                  size: 64,
-                  iconSize: 30,
-                  onTap: onLike,
+                  size: 58,
+                  iconSize: 28,
                   isPrimary: true,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    onLike();
+                  },
                 ),
                 // Save (Bookmark)
                 _ActionButton(
-                  icon: Icons.bookmark_outline,
-                  color: Colors.amber.shade600,
-                  size: 52,
-                  iconSize: 24,
-                  onTap: onSave,
+                  icon: Icons.bookmark_rounded,
+                  color: const Color(0xFF2196F3),
+                  size: 42,
+                  iconSize: 20,
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    onSave();
+                  },
                 ),
               ],
             ),
           ),
         ],
       ),
-    ).animate().fadeIn(duration: 300.ms).scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack);
+    )
+        .animate()
+        .fadeIn(duration: 300.ms)
+        .scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack);
   }
 }
 
@@ -1082,25 +1152,44 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
         width: size,
         height: size,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isPrimary ? color : Colors.transparent,
+          color: isPrimary
+              ? color
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.04)),
           shape: BoxShape.circle,
-          border: isPrimary ? null : Border.all(color: color, width: 2.5),
+          border: isPrimary
+              ? null
+              : Border.all(
+                  color: color.withValues(alpha: 0.5),
+                  width: 1.5,
+                ),
           boxShadow: isPrimary
               ? [
                   BoxShadow(
-                    color: color.withValues(alpha: 0.35),
+                    color: color.withValues(alpha: 0.4),
                     blurRadius: 14,
-                    spreadRadius: 2,
+                    spreadRadius: 1,
                     offset: const Offset(0, 4),
                   ),
                 ]
-              : null,
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Icon(
           icon,
@@ -1147,30 +1236,40 @@ class _NotificationItem extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const SizedBox(height: 4),
               Text(
                 description,
-                style: TextStyle(color: context.rovlo.textSecondary, fontSize: 13),
+                style:
+                    TextStyle(color: context.rovlo.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 8),
-              if (title.contains('Match') || title.contains('nearby') || title.contains('liked')) ...[
+              if (title.contains('Match') ||
+                  title.contains('nearby') ||
+                  title.contains('liked')) ...[
                 Row(
                   children: [
                     ElevatedButton(
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Accepted match request! 💕')),
+                          const SnackBar(
+                              content: Text('Accepted match request! 💕')),
                         );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('Accept', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('Accept',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton(
@@ -1180,11 +1279,13 @@ class _NotificationItem extends StatelessWidget {
                         );
                       },
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                      child:
+                          const Text('Reject', style: TextStyle(fontSize: 12)),
                     ),
                   ],
                 ),
@@ -1192,7 +1293,9 @@ class _NotificationItem extends StatelessWidget {
               ],
               Text(
                 time,
-                style: TextStyle(color: context.rovlo.textSecondary.withValues(alpha: 0.6), fontSize: 11),
+                style: TextStyle(
+                    color: context.rovlo.textSecondary.withValues(alpha: 0.6),
+                    fontSize: 11),
               ),
             ],
           ),
@@ -1282,7 +1385,10 @@ class _DatePickerDropdown extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(fontSize: 12, color: context.rovlo.textSecondary, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              fontSize: 12,
+              color: context.rovlo.textSecondary,
+              fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         Container(
@@ -1302,7 +1408,9 @@ class _DatePickerDropdown extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.white : Colors.black87,
               ),
-              items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+              items: items
+                  .map((i) => DropdownMenuItem(value: i, child: Text(i)))
+                  .toList(),
               onChanged: onChanged,
             ),
           ),

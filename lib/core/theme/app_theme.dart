@@ -4,10 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
-/// Builds the light and dark [ThemeData] for Rovlo.
+/// Builds the light and dark [ThemeData] for Rovlo — Blue Edition.
 ///
-/// Both themes share the same shapes, spacing and typography so the app feels
-/// identical in either mode — only the colours flip.
+/// Light mode is the DEFAULT. Dark mode is togglable via ThemeProvider.
 class AppTheme {
   AppTheme._();
 
@@ -25,7 +24,7 @@ class AppTheme {
       primary: isDark ? AppColors.primaryVibrantDark : AppColors.primary,
       onPrimary: Colors.white,
       secondary: AppColors.secondary,
-      onSecondary: Colors.white,
+      onSecondary: AppColors.elementBlack,
       error: AppColors.error,
       onError: Colors.white,
       surface: isDark ? AppColors.darkSurface : AppColors.lightSurface,
@@ -53,7 +52,12 @@ class AppTheme {
       canvasColor: background,
       textTheme: baseText,
       primaryColor: scheme.primary,
-      splashFactory: InkRipple.splashFactory,
+      actionIconTheme: ActionIconThemeData(
+        backButtonIconBuilder: (BuildContext context) => const Icon(
+          Icons.arrow_back_ios_new_rounded,
+          size: 18,
+        ),
+      ),
       appBarTheme: AppBarTheme(
         elevation: 0,
         backgroundColor: Colors.transparent,
@@ -78,7 +82,7 @@ class AppTheme {
             fontWeight: FontWeight.w600,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
+            borderRadius: BorderRadius.circular(30), // Pill shape
           ),
         ),
       ),
@@ -92,7 +96,7 @@ class AppTheme {
             fontWeight: FontWeight.w600,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
+            borderRadius: BorderRadius.circular(30),
           ),
         ),
       ),
@@ -102,7 +106,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: isDark
-            ? Colors.white.withValues(alpha: 0.05)
+            ? Colors.white.withValues(alpha: 0.06)
             : Colors.black.withValues(alpha: 0.04),
         hintStyle: TextStyle(color: textSecondary),
         contentPadding:
@@ -117,7 +121,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radius),
-          borderSide: BorderSide(color: scheme.primary, width: 1.6),
+          borderSide: BorderSide.none,
         ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
@@ -185,7 +189,7 @@ class RovloColors extends ThemeExtension<RovloColors> {
   }
 }
 
-/// Convenience accessor: `context.rovlo.textSecondary`.
+/// Convenience accessor: `context.rovlo.textSecondary`
 extension RovloThemeX on BuildContext {
   RovloColors get rovlo => Theme.of(this).extension<RovloColors>()!;
 }

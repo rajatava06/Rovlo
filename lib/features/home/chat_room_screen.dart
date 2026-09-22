@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/traveler.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/cloudinary_service.dart';
 import 'traveler_profile_screen.dart';
 
 class ChatRoomArgs {
@@ -34,6 +37,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _showSafetyBanner = true;
+  bool _isUploadingImage = false;
   final ImagePicker _imagePicker = ImagePicker();
 
   bool get _isBot => widget.args.name == 'Rovlo';
@@ -53,19 +57,56 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.dispose();
   }
 
-  void _sendMessage({String? customText}) {
+  void _sendMessage({String? customText, String? imageUrl}) {
     final text = (customText ?? _textController.text).trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && imageUrl == null) return;
 
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    chatProvider.sendMessage(widget.args.name, text, authProvider.currentUser);
-    if (customText == null) {
+    chatProvider.sendMessage(
+      widget.args.name,
+      text.isNotEmpty ? text : '📷 Photo',
+      authProvider.currentUser,
+      imageUrl: imageUrl,
+    );
+
+    if (customText == null && imageUrl == null) {
       _textController.clear();
     }
 
     _scrollToBottom();
+  }
+
+  Future<void> _handlePickAndSendImage(ImageSource source) async {
+    try {
+      final XFile? picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      setState(() => _isUploadingImage = true);
+
+      // Upload to Cloudinary
+      final uploadedUrl = await CloudinaryService.instance.uploadImage(picked);
+
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+        if (uploadedUrl != null) {
+          _sendMessage(customText: '', imageUrl: uploadedUrl);
+        } else {
+          _sendMessage(customText: '', imageUrl: picked.path);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload photo: $e')),
+        );
+      }
+    }
   }
 
   void _scrollToBottom() {
@@ -137,24 +178,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_library, color: AppColors.primary),
-              title: const Text('Send Photo from Gallery'),
-              onTap: () async {
+              title: const Text('Send Photo from Gallery (Cloudinary)'),
+              subtitle: const Text('Direct cloud image upload'),
+              onTap: () {
                 Navigator.pop(ctx);
-                final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
-                if (picked != null) {
-                  _sendMessage(customText: '📷 Sent a photo');
-                }
+                _handlePickAndSendImage(ImageSource.gallery);
               },
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt, color: Colors.blue),
               title: const Text('Capture with Camera'),
-              onTap: () async {
+              onTap: () {
                 Navigator.pop(ctx);
-                final picked = await _imagePicker.pickImage(source: ImageSource.camera);
-                if (picked != null) {
-                  _sendMessage(customText: '📷 Captured photo');
-                }
+                _handlePickAndSendImage(ImageSource.camera);
               },
             ),
             ListTile(
@@ -169,6 +205,81 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         ),
       ),
     );
+  }
+
+  void _showImagePreview(String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: InteractiveViewer(
+                child: _buildImageWidget(imageUrl, fit: BoxFit.contain),
+              ),
+            ),
+            IconButton(
+              icon: const CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: Icon(Icons.close, color: Colors.white, size: 20),
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageWidget(String url, {BoxFit fit = BoxFit.cover}) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        fit: fit,
+        loadingBuilder: (ctx, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            height: 180,
+            color: Colors.black12,
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(strokeWidth: 2),
+          );
+        },
+        errorBuilder: (_, __, ___) => Container(
+          height: 140,
+          color: Colors.grey.shade300,
+          alignment: Alignment.center,
+          child: const Icon(Icons.broken_image, color: Colors.grey),
+        ),
+      );
+    } else if (!kIsWeb && (url.startsWith('/') || url.contains(':\\') || url.startsWith('file:'))) {
+      final cleanPath = url.replaceFirst('file://', '');
+      return Image.file(
+        File(cleanPath),
+        fit: fit,
+        errorBuilder: (_, __, ___) => Container(
+          height: 140,
+          color: Colors.grey.shade300,
+          alignment: Alignment.center,
+          child: const Icon(Icons.image, color: Colors.grey),
+        ),
+      );
+    } else {
+      return Image.network(
+        url,
+        fit: fit,
+        errorBuilder: (_, __, ___) => Container(
+          height: 140,
+          color: Colors.grey.shade300,
+          alignment: Alignment.center,
+          child: const Icon(Icons.image, color: Colors.grey),
+        ),
+      );
+    }
   }
 
   void _makeAudioCall() {
@@ -238,74 +349,108 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     age: 24,
                     imageUrl: widget.args.imageUrl,
                     imageUrls: [widget.args.imageUrl],
-                    location: 'Tokyo',
-                    dateRange: 'Oct 25 - Nov 2',
-                    tags: ['Backpacker'],
+                    location: 'Nearby',
+                    dateRange: 'This week',
+                    tags: const ['Traveler', 'Exploring'],
                     isVerified: widget.args.isVerified,
-                    description: 'Hey! Let\'s chat and travel together!',
-                    about: 'Hey! I\'m ${widget.args.name}. Let\'s explore the city and hang out!',
+                    description: 'Fellow traveler on Rovlo exploring amazing destinations.',
+                    about: 'Fellow traveler on Rovlo exploring amazing destinations.',
                   );
 
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => TravelerProfileScreen(traveler: traveler),
+                builder: (context) => TravelerProfileScreen(traveler: traveler),
               ),
             );
           },
           child: Row(
             children: [
-              _isBot
-                  ? Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFF6B35),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const CircleAvatar(
-                        radius: 16,
-                        backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
-                      ),
-                    )
-                  : CircleAvatar(
-                      radius: 18,
-                      backgroundImage: NetworkImage(widget.args.imageUrl),
-                    ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+              Stack(
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        widget.args.name,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  _isBot
+                      ? Container(
+                          width: 36,
+                          height: 36,
+                          padding: const EdgeInsets.all(7),
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Image.asset(
+                            'assets/images/rovlo_icon.png',
+                            color: Colors.white,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : CircleAvatar(
+                          radius: 18,
+                          backgroundImage: NetworkImage(widget.args.imageUrl),
+                        ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          width: 2,
+                        ),
                       ),
-                      if (widget.args.isVerified) ...[
-                        const SizedBox(width: 4),
-                        const Icon(Icons.verified, color: Colors.blue, size: 14),
-                      ],
-                    ],
-                  ),
-                  Text(
-                    _isBot ? 'Automated Bot 🤖' : 'Active now',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _isBot ? Colors.orange : Colors.green,
-                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.args.name,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.args.isVerified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified, color: AppColors.primary, size: 16),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      _isBot ? 'Travel Assistant Bot' : 'Online',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _isBot ? AppColors.primary : Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         actions: [
-          // Audio Call ONLY
           IconButton(
             icon: const Icon(Icons.call_outlined),
             onPressed: _makeAudioCall,
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Chat options: Notifications on, End-to-end simulated.')),
+              );
+            },
           ),
         ],
       ),
@@ -313,8 +458,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         children: [
           if (_showSafetyBanner && !_isBot)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: const Color(0xFFFEEADF),
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFDEEE8),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFCCB8)),
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.shield_outlined, color: AppColors.primary, size: 20),
@@ -359,14 +509,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       if (!msg.isMe) ...[
                         _isBot
                             ? Container(
-                                padding: const EdgeInsets.all(1.5),
+                                width: 28,
+                                height: 28,
+                                padding: const EdgeInsets.all(5.5),
                                 decoration: const BoxDecoration(
-                                  color: Color(0xFFFF6B35),
+                                  color: AppColors.primary,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const CircleAvatar(
-                                  radius: 14,
-                                  backgroundImage: AssetImage('assets/images/rovlo_logo.jpg'),
+                                child: Image.asset(
+                                  'assets/images/rovlo_icon.png',
+                                  color: Colors.white,
+                                  fit: BoxFit.contain,
                                 ),
                               )
                             : CircleAvatar(
@@ -380,10 +533,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                           crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: msg.hasImage
+                                  ? const EdgeInsets.all(4)
+                                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
                                 color: msg.isMe
-                                    ? const Color(0xFF8B5A2B)
+                                    ? AppColors.primary
                                     : (isDark ? AppColors.darkCard : const Color(0xFFEBEBEB)),
                                 borderRadius: BorderRadius.only(
                                   topLeft: const Radius.circular(16),
@@ -392,15 +547,50 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                   bottomRight: Radius.circular(msg.isMe ? 0 : 16),
                                 ),
                               ),
-                              child: Text(
-                                msg.text,
-                                style: TextStyle(
-                                  color: msg.isMe
-                                      ? Colors.white
-                                      : (isDark ? Colors.white : AppColors.lightTextPrimary),
-                                  fontSize: 14,
-                                  height: 1.3,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (msg.hasImage) ...[
+                                    GestureDetector(
+                                      onTap: () => _showImagePreview(msg.imageUrl!),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxHeight: 220,
+                                            maxWidth: 240,
+                                          ),
+                                          child: _buildImageWidget(msg.imageUrl!),
+                                        ),
+                                      ),
+                                    ),
+                                    if (msg.text.isNotEmpty && msg.text != '📷 Photo') ...[
+                                      const SizedBox(height: 6),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        child: Text(
+                                          msg.text,
+                                          style: TextStyle(
+                                            color: msg.isMe
+                                                ? Colors.white
+                                                : (isDark ? Colors.white : AppColors.lightTextPrimary),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ] else
+                                    Text(
+                                      msg.text,
+                                      style: TextStyle(
+                                        color: msg.isMe
+                                            ? Colors.white
+                                            : (isDark ? Colors.white : AppColors.lightTextPrimary),
+                                        fontSize: 14,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -430,6 +620,26 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
           ),
 
+          if (_isUploadingImage)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: primaryPeach.withValues(alpha: 0.1),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Uploading image to Cloudinary...',
+                    style: TextStyle(fontSize: 12, color: primaryPeach, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -452,9 +662,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                               controller: _textController,
                               style: const TextStyle(fontSize: 14),
                               decoration: const InputDecoration(
+                                isCollapsed: true,
                                 hintText: 'Type a message...',
                                 filled: false,
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(vertical: 10),
                               ),
                               onSubmitted: (_) => _sendMessage(),

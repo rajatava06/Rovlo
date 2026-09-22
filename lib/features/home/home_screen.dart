@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -12,8 +15,14 @@ import 'explore_tab.dart';
 import 'profile_tab.dart';
 import 'maps_tab.dart';
 import 'chats_tab.dart';
+import 'hot_tab.dart';
 
-/// Main authenticated shell with a custom 5-tab bottom navigation bar.
+/// Main authenticated shell with iOS-style floating oval bottom navigation bar.
+///
+/// Features:
+/// - Hide on scroll down, reappear on scroll up
+/// - Translucent frosted glass effect with blue tint
+/// - Animated slider indicator between tabs
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,6 +32,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 2; // Default to Discover (index 2)
+  bool _isNavVisible = true;
   StreamSubscription<String>? _notificationSub;
   StreamSubscription? _adminNotifSub;
   String? _bannerText;
@@ -31,12 +41,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Ensure profile data is fresh when landing on Home.
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => context.read<AuthProvider>().refreshCurrentUser(),
     );
 
-    // Listen for incoming dynamic notifications from ChatProvider
+    // Chat notification banner
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     _notificationSub = chatProvider.notificationStream.listen((msg) {
       if (!mounted) return;
@@ -44,16 +53,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _bannerText = msg;
         _showBanner = true;
       });
-      // Auto hide notification banner after 4 seconds
       Future.delayed(const Duration(seconds: 4), () {
         if (!mounted) return;
-        setState(() {
-          _showBanner = false;
-        });
+        setState(() => _showBanner = false);
       });
     });
 
-    // Listen for admin custom push notifications
+    // Admin push notification banner
     _adminNotifSub = NotificationService().onNotification.listen((notif) {
       if (!mounted) return;
       setState(() {
@@ -62,9 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       Future.delayed(const Duration(seconds: 5), () {
         if (!mounted) return;
-        setState(() {
-          _showBanner = false;
-        });
+        setState(() => _showBanner = false);
       });
     });
   }
@@ -76,175 +80,69 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Widget _buildNavItem({
-    required int index,
-    required IconData icon,
-    required IconData selectedIcon,
-    required String label,
-    bool isMiddle = false,
-    bool showDot = false,
-  }) {
-    final isSelected = _index == index;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
-    final inactiveColor = context.rovlo.textSecondary;
-
-    if (isMiddle) {
-      return GestureDetector(
-        onTap: () => setState(() => _index = index),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: isSelected ? 62 : 54,
-              height: isSelected ? 44 : 38,
-              decoration: BoxDecoration(
-                color: isSelected ? activeColor : (isDark ? AppColors.darkCard : AppColors.secondary),
-                borderRadius: BorderRadius.circular(22),
-                border: isSelected
-                    ? Border.all(
-                        color: isDark ? Colors.white : AppColors.elementBlack,
-                        width: 1.5,
-                      )
-                    : null,
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: activeColor.withValues(alpha: 0.3),
-                          blurRadius: 10,
-                          spreadRadius: 2,
-                          offset: const Offset(0, 3),
-                        )
-                      ]
-                    : null,
-              ),
-              child: Icon(
-                isSelected ? selectedIcon : icon,
-                color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.lightTextPrimary),
-                size: isSelected ? 26 : 22,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? activeColor : inactiveColor,
-              ),
-            ),
-          ],
-        ),
-      );
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is UserScrollNotification) {
+      if (notification.direction == ScrollDirection.reverse) {
+        if (_isNavVisible) {
+          setState(() => _isNavVisible = false);
+        }
+      } else if (notification.direction == ScrollDirection.forward) {
+        if (!_isNavVisible) {
+          setState(() => _isNavVisible = true);
+        }
+      }
+    } else if (notification is ScrollUpdateNotification) {
+      if (notification.metrics.pixels <= 10 && !_isNavVisible) {
+        setState(() => _isNavVisible = true);
+      }
     }
-
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _index = index),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isSelected ? activeColor.withValues(alpha: 0.15) : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: activeColor.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          spreadRadius: 2,
-                        )
-                      ]
-                    : null,
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(
-                    isSelected ? selectedIcon : icon,
-                    color: isSelected ? activeColor : inactiveColor,
-                    size: 24,
-                  ),
-                  if (showDot)
-                    Positioned(
-                      top: -4,
-                      right: -4,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.primaryVibrantDark : AppColors.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isDark ? AppColors.darkSurface : Colors.white,
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? activeColor : inactiveColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final tabs = [
       const MapsTab(),
-      const _HotComingSoon(),
+      const HotTab(),
       const ExploreTab(),
       const ChatsTab(),
       const ProfileTab(),
     ];
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final primaryBlue =
+        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
     final chatProvider = context.watch<ChatProvider>();
     final hasUnread = chatProvider.hasUnreadMessages;
 
     return Scaffold(
       body: Stack(
         children: [
-          // If Maps tab (index 0), render full screen without top SafeArea padding
+          // ── Tab Content with Scroll Detection ────────────────────────────
           Positioned.fill(
-            child: _index == 0
-                ? const MapsTab()
-                : SafeArea(
-                    top: true,
-                    bottom: false,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: child,
-                      ),
-                      child: KeyedSubtree(
-                        key: ValueKey(_index),
-                        child: tabs[_index],
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: _index == 0
+                  ? const MapsTab()
+                  : SafeArea(
+                      top: true,
+                      bottom: false,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey(_index),
+                          child: tabs[_index],
+                        ),
                       ),
                     ),
-                  ),
+            ),
           ),
 
-          // ── In-App Heads-up Notification Banner ──
+          // ── Notification Banner ──────────────────────────────────────────
           if (_showBanner && _bannerText != null)
             Positioned(
               top: 16,
@@ -256,17 +154,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(16),
                   color: isDark ? AppColors.darkCard : Colors.white,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: primaryPeach.withValues(alpha: 0.25),
+                        color: primaryBlue.withValues(alpha: 0.25),
                         width: 1.5,
                       ),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.chat_bubble, color: primaryPeach, size: 20),
+                        Icon(Icons.chat_bubble, color: primaryBlue, size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -275,12 +174,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               const Text(
                                 'New Notification',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 _bannerText!,
-                                style: TextStyle(fontSize: 12, color: context.rovlo.textSecondary),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: context.rovlo.textSecondary),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -291,75 +193,303 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.close, size: 16),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          onPressed: () {
-                            setState(() {
-                              _showBanner = false;
-                            });
-                          },
+                          onPressed: () =>
+                              setState(() => _showBanner = false),
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-            ).animate().slideY(begin: -1.0, end: 0.0, duration: 300.ms, curve: Curves.easeOutQuad).fadeIn(),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        height: 88,
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(
-                  index: 0,
-                  icon: Icons.map_outlined,
-                  selectedIcon: Icons.map,
-                  label: 'Maps',
-                ),
-                _buildNavItem(
-                  index: 1,
-                  icon: Icons.whatshot_outlined,
-                  selectedIcon: Icons.whatshot,
-                  label: 'Hot',
-                ),
-                // Discover (Highlighted)
-                Expanded(
-                  child: _buildNavItem(
-                    index: 2,
-                    icon: Icons.explore_outlined,
-                    selectedIcon: Icons.explore,
-                    label: 'Discover',
-                    isMiddle: true,
+            )
+                .animate()
+                .slideY(
+                    begin: -1.0,
+                    end: 0.0,
+                    duration: 300.ms,
+                    curve: Curves.easeOutQuad)
+                .fadeIn(),
+
+          // ── iOS Oval Floating Bottom Navbar (Pop down on scroll) ────────
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 8,
+            child: SafeArea(
+              top: false,
+              bottom: true,
+              minimum: const EdgeInsets.only(bottom: 2),
+              child: AnimatedSlide(
+                offset: _isNavVisible ? Offset.zero : const Offset(0, 1.6),
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeInOutCubic,
+                child: AnimatedOpacity(
+                  opacity: _isNavVisible ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 250),
+                  child: _IosOvalNavBar(
+                    currentIndex: _index,
+                    hasUnread: hasUnread,
+                    onTap: (i) => setState(() => _index = i),
                   ),
                 ),
-                _buildNavItem(
-                  index: 3,
-                  icon: Icons.chat_bubble_outline,
-                  selectedIcon: Icons.chat_bubble,
-                  label: 'Chats',
-                  showDot: hasUnread,
-                ),
-                _buildNavItem(
-                  index: 4,
-                  icon: Icons.person_outline,
-                  selectedIcon: Icons.person,
-                  label: 'Profile',
-                ),
-              ],
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// iOS-style Floating Oval Nav Bar with translucent blue tint and slider indicator
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _IosOvalNavBar extends StatefulWidget {
+  const _IosOvalNavBar({
+    required this.currentIndex,
+    required this.hasUnread,
+    required this.onTap,
+  });
+
+  final int currentIndex;
+  final bool hasUnread;
+  final ValueChanged<int> onTap;
+
+  @override
+  State<_IosOvalNavBar> createState() => _IosOvalNavBarState();
+}
+
+class _IosOvalNavBarState extends State<_IosOvalNavBar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _slideController;
+  late Animation<double> _slideAnim;
+  int _prevIndex = 2;
+
+  static const List<_NavItem> _items = [
+    _NavItem(icon: Icons.map_outlined, activeIcon: Icons.map, label: 'Maps'),
+    _NavItem(
+        icon: Icons.whatshot_outlined,
+        activeIcon: Icons.whatshot,
+        label: 'Hot'),
+    _NavItem(
+        icon: Icons.explore_outlined,
+        activeIcon: Icons.explore,
+        label: 'Discover'),
+    _NavItem(
+        icon: Icons.chat_bubble_outline,
+        activeIcon: Icons.chat_bubble,
+        label: 'Chats'),
+    _NavItem(
+        icon: Icons.person_outline,
+        activeIcon: Icons.person,
+        label: 'Profile'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _prevIndex = widget.currentIndex;
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _slideAnim =
+        Tween<double>(begin: widget.currentIndex.toDouble(),
+                      end: widget.currentIndex.toDouble())
+            .animate(CurvedAnimation(
+      parent: _slideController,
+      curve: Curves.easeInOutCubic,
+    ));
+  }
+
+  @override
+  void didUpdateWidget(_IosOvalNavBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentIndex != widget.currentIndex) {
+      _slideAnim = Tween<double>(
+        begin: _prevIndex.toDouble(),
+        end: widget.currentIndex.toDouble(),
+      ).animate(CurvedAnimation(
+        parent: _slideController,
+        curve: Curves.easeInOutCubic,
+      ));
+      _slideController.forward(from: 0);
+      _prevIndex = widget.currentIndex;
+    }
+  }
+
+  @override
+  void dispose() {
+    _slideController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeBlue =
+        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+
+    // Translucent background with subtle blue tint
+    final bgColor = isDark
+        ? const Color(0xFF0A192F).withValues(alpha: 0.82)
+        : Colors.white.withValues(alpha: 0.82);
+
+    final borderColor = isDark
+        ? AppColors.primaryVibrantDark.withValues(alpha: 0.28)
+        : AppColors.primary.withValues(alpha: 0.20);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(32),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: borderColor, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: activeBlue.withValues(alpha: isDark ? 0.22 : 0.14),
+                blurRadius: 20,
+                spreadRadius: 1,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.06),
+                blurRadius: 12,
+                spreadRadius: 0,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth / _items.length;
+
+              return Stack(
+                children: [
+                  // ── Animated sliding indicator ─────────────────────────────
+                  AnimatedBuilder(
+                    animation: _slideAnim,
+                    builder: (context, _) {
+                      final left =
+                          _slideAnim.value * itemWidth + itemWidth * 0.08;
+                      final indicatorWidth = itemWidth * 0.84;
+                      return Positioned(
+                        left: left,
+                        top: 4,
+                        bottom: 4,
+                        width: indicatorWidth,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                activeBlue.withValues(alpha: isDark ? 0.22 : 0.18),
+                                activeBlue.withValues(alpha: isDark ? 0.12 : 0.08),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: activeBlue.withValues(alpha: isDark ? 0.35 : 0.28),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: activeBlue.withValues(alpha: 0.12),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  // ── Nav items ──────────────────────────────────────────────
+                  Row(
+                    children: List.generate(_items.length, (i) {
+                      final item = _items[i];
+                      final isSelected = i == widget.currentIndex;
+                      final showBadge =
+                          item.label == 'Chats' && widget.hasUnread;
+
+                      return Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (widget.currentIndex != i) {
+                              HapticFeedback.selectionClick();
+                            }
+                            widget.onTap(i);
+                          },
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  AnimatedScale(
+                                    scale: isSelected ? 1.10 : 1.0,
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOutBack,
+                                    child: Icon(
+                                      isSelected ? item.activeIcon : item.icon,
+                                      size: 20,
+                                      color: isSelected
+                                          ? activeBlue
+                                          : context.rovlo.textSecondary,
+                                    ),
+                                  ),
+                                  if (showBadge)
+                                    Positioned(
+                                      top: -2,
+                                      right: -4,
+                                      child: Container(
+                                        width: 7,
+                                        height: 7,
+                                        decoration: BoxDecoration(
+                                          color: activeBlue,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isDark
+                                                ? AppColors.darkSurface
+                                                : Colors.white,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              AnimatedDefaultTextStyle(
+                                duration: const Duration(milliseconds: 180),
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? activeBlue
+                                      : context.rovlo.textSecondary,
+                                ),
+                                child: Text(item.label),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -367,29 +497,45 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _NavItem {
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hot Coming Soon placeholder
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _HotComingSoon extends StatelessWidget {
   const _HotComingSoon();
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryPeach = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final primaryBlue =
+        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: primaryPeach.withValues(alpha: 0.12),
+                  color: primaryBlue.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.whatshot, color: primaryPeach, size: 64),
+                child: Icon(Icons.whatshot, color: primaryBlue, size: 64),
               ),
               const SizedBox(height: 24),
               Text(

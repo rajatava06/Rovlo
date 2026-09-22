@@ -83,8 +83,16 @@ class _CreateAccountButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
+          elevation: 3,
+          shadowColor: AppColors.primary.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
+          ),
         ),
-        child: const Text('Create Account'),
+        child: const Text(
+          'Create Account',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
@@ -103,17 +111,17 @@ class _SignInButton extends StatelessWidget {
           arguments: const SocialAuthArgs(isSignIn: true),
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color.fromARGB(255, 255, 255, 255),
-          backgroundColor: Colors.transparent,
-          side: BorderSide(
-              color: const Color.fromARGB(4, 255, 255, 255)
-                  .withValues(alpha: 0.35),
-              width: 1.2),
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.white.withValues(alpha: 0.12),
+          side: const BorderSide(color: Colors.white54, width: 1.2),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(30),
           ),
         ),
-        child: const Text('Sign In'),
+        child: const Text(
+          'Sign In',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

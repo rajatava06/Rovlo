@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_back_button.dart';
 import '../../providers/auth_provider.dart';
 
 /// Verification screen: mock selfie + govt ID upload flow.
@@ -224,9 +225,10 @@ class _VerifyScreenState extends State<VerifyScreen> {
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
             left: 20,
-            child: IconButton(
+            child: RovloBackButton(
               onPressed: () => setState(() => _isCameraOpen = false),
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              color: Colors.white,
+              backgroundColor: Colors.black45,
             ),
           ),
           // Capture controls
