@@ -4,11 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// A slow, always-moving multi-colour gradient with drifting light "orbs".
+/// A slow, always-moving blue gradient with drifting light orbs.
 ///
-/// Used as the animated fallback behind the Welcome screen when no background
-/// video is present, and anywhere a lively brand backdrop is wanted. Pure
-/// Flutter — no assets required.
+/// Used as the animated fallback behind the Welcome/SignIn screens when no
+/// background video is present. Pure Flutter — no assets required.
 class AnimatedGradientBackground extends StatefulWidget {
   const AnimatedGradientBackground({
     super.key,
@@ -24,7 +23,8 @@ class AnimatedGradientBackground extends StatefulWidget {
       _AnimatedGradientBackgroundState();
 }
 
-class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
+class _AnimatedGradientBackgroundState
+    extends State<AnimatedGradientBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
@@ -33,7 +33,7 @@ class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 12),
+      duration: const Duration(seconds: 14),
     )..repeat();
   }
 
@@ -53,8 +53,8 @@ class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
         return DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment(cos(angle), sin(angle)),
-              end: Alignment(-cos(angle), -sin(angle)),
+              begin: Alignment(cos(angle) * 0.7, sin(angle) * 0.7),
+              end: Alignment(-cos(angle) * 0.7, -sin(angle) * 0.7),
               colors: widget.colors,
             ),
           ),
@@ -75,17 +75,19 @@ class _OrbPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final orbs = <_Orb>[
-      _Orb(0.2, 0.3, 0.32, Colors.white.withValues(alpha: 0.14)),
-      _Orb(0.8, 0.2, 0.26, AppColors.accent.withValues(alpha: 0.16)),
-      _Orb(0.7, 0.8, 0.38, AppColors.secondary.withValues(alpha: 0.18)),
-      _Orb(0.15, 0.85, 0.22, Colors.white.withValues(alpha: 0.10)),
+    final orbs = <_OrbData>[
+      _OrbData(0.15, 0.20, 0.30, Colors.white.withValues(alpha: 0.16)),
+      _OrbData(0.82, 0.15, 0.24, const Color(0xFF90CAF9).withValues(alpha: 0.20)),
+      _OrbData(0.70, 0.80, 0.36, const Color(0xFF64B5F6).withValues(alpha: 0.18)),
+      _OrbData(0.10, 0.82, 0.20, Colors.white.withValues(alpha: 0.12)),
+      _OrbData(0.50, 0.50, 0.18, const Color(0xFFBBDEFB).withValues(alpha: 0.15)),
     ];
+
     for (var i = 0; i < orbs.length; i++) {
       final o = orbs[i];
-      final phase = t * 2 * pi + i;
-      final dx = (o.x + 0.05 * cos(phase)) * size.width;
-      final dy = (o.y + 0.05 * sin(phase)) * size.height;
+      final phase = t * 2 * pi + i * 1.2;
+      final dx = (o.x + 0.06 * cos(phase)) * size.width;
+      final dy = (o.y + 0.06 * sin(phase)) * size.height;
       final radius = o.r * size.shortestSide;
       final paint = Paint()
         ..shader = RadialGradient(
@@ -100,8 +102,8 @@ class _OrbPainter extends CustomPainter {
   bool shouldRepaint(covariant _OrbPainter oldDelegate) => oldDelegate.t != t;
 }
 
-class _Orb {
-  const _Orb(this.x, this.y, this.r, this.color);
+class _OrbData {
+  const _OrbData(this.x, this.y, this.r, this.color);
   final double x;
   final double y;
   final double r;

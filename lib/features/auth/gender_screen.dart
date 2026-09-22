@@ -77,7 +77,7 @@ class _GenderTile extends StatelessWidget {
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         color: selected
-            ? AppColors.primary.withValues(alpha: 0.12)
+            ? AppColors.primary.withValues(alpha: 0.10)
             : context.rovlo.card,
         borderRadius: BorderRadius.circular(AppTheme.radius),
         border: Border.all(

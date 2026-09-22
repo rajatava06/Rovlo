@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_back_button.dart';
 import '../../models/traveler.dart';
 
 /// Full-screen profile view for a traveler. Shows photos, name, age,
@@ -65,17 +66,11 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 8,
                   left: 16,
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
-                    ),
+                  child: const RovloBackButton(
+                    color: Colors.white,
+                    backgroundColor: Colors.black45,
+                    size: 40,
+                    iconSize: 20,
                   ),
                 ),
                 // Dot indicators

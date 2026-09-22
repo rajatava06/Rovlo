@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_back_button.dart';
 import '../../core/widgets/rovlo_logo.dart';
 import '../../core/widgets/social_auth_buttons.dart';
 import '../../core/widgets/video_background.dart';
@@ -124,10 +125,9 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                 children: [
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      onPressed: () => Navigator.maybePop(context),
-                      icon: const Icon(Icons.arrow_back_ios_new,
-                          color: Colors.white, size: 18),
+                    child: const RovloBackButton(
+                      color: Colors.white,
+                      backgroundColor: Colors.black26,
                     ),
                   ),
                   const Spacer(flex: 2),

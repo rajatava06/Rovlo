@@ -12,7 +12,7 @@ class ThemeProvider extends ChangeNotifier {
 
   static const String _prefsKey = 'rovlo_theme_mode';
 
-  ThemeMode _mode = ThemeMode.system;
+  ThemeMode _mode = ThemeMode.light; // Default: light (white) mode
   ThemeMode get mode => _mode;
 
   bool isDark(BuildContext context) {
