@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,15 +10,18 @@ import '../../core/theme/app_theme.dart';
 import '../../models/traveler.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
-import '../../services/cloudinary_service.dart';
+import '../../core/widgets/keyboard_inset.dart';
+import '../../services/media_service.dart';
 import 'traveler_profile_screen.dart';
 
 class ChatRoomArgs {
+  final String peerId;
   final String name;
   final String imageUrl;
   final bool isVerified;
 
   const ChatRoomArgs({
+    required this.peerId,
     required this.name,
     required this.imageUrl,
     required this.isVerified,
@@ -40,13 +44,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   bool _isUploadingImage = false;
   final ImagePicker _imagePicker = ImagePicker();
 
-  bool get _isBot => widget.args.name == 'Rovlo';
+  bool get _isBot => widget.args.peerId == kBotId;
+  bool get _isSupport => widget.args.peerId == kSupportId;
+  bool get _isSystem => _isBot || _isSupport;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ChatProvider>(context, listen: false).markAsRead(widget.args.name);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final chat = Provider.of<ChatProvider>(context, listen: false);
+      await chat.loadMessages(widget.args.peerId);
+      chat.markAsRead(widget.args.peerId);
+      _scrollToBottom();
     });
   }
 
@@ -57,25 +66,31 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.dispose();
   }
 
-  void _sendMessage({String? customText, String? imageUrl}) {
+  Future<void> _sendMessage({String? customText, String? imageUrl}) async {
     final text = (customText ?? _textController.text).trim();
     if (text.isEmpty && imageUrl == null) return;
 
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    chatProvider.sendMessage(
-      widget.args.name,
-      text.isNotEmpty ? text : '📷 Photo',
-      authProvider.currentUser,
-      imageUrl: imageUrl,
-    );
+    final messenger = ScaffoldMessenger.of(context);
 
     if (customText == null && imageUrl == null) {
       _textController.clear();
     }
-
     _scrollToBottom();
+
+    try {
+      await chatProvider.sendMessage(
+        widget.args.peerId,
+        text.isNotEmpty ? text : '📷 Photo',
+        authProvider.currentUser,
+        imageUrl: imageUrl,
+      );
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Message not sent. Check your connection and try again.'),
+      ));
+    }
   }
 
   Future<void> _handlePickAndSendImage(ImageSource source) async {
@@ -88,16 +103,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
       setState(() => _isUploadingImage = true);
 
-      // Upload to Cloudinary
-      final uploadedUrl = await CloudinaryService.instance.uploadImage(picked);
+      // Upload to Supabase Storage (bucket: chat-media)
+      final uploadedUrl =
+          await MediaService.instance.uploadXFile(picked, bucket: 'chat-media');
 
       if (mounted) {
         setState(() => _isUploadingImage = false);
-        if (uploadedUrl != null) {
-          _sendMessage(customText: '', imageUrl: uploadedUrl);
-        } else {
-          _sendMessage(customText: '', imageUrl: picked.path);
-        }
+        _sendMessage(customText: '', imageUrl: uploadedUrl);
       }
     } catch (e) {
       if (mounted) {
@@ -178,8 +190,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_library, color: AppColors.primary),
-              title: const Text('Send Photo from Gallery (Cloudinary)'),
-              subtitle: const Text('Direct cloud image upload'),
+              title: const Text('Send Photo from Gallery'),
+              subtitle: const Text('Uploaded securely to Rovlo cloud'),
               onTap: () {
                 Navigator.pop(ctx);
                 _handlePickAndSendImage(ImageSource.gallery);
@@ -191,14 +203,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _handlePickAndSendImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.green),
-              title: const Text('Share Live Location'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _sendMessage(customText: '📍 Shared current location');
               },
             ),
           ],
@@ -282,39 +286,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
-  void _makeAudioCall() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.phone, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text('Calling ${widget.args.name}...'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundImage: NetworkImage(widget.args.imageUrl),
-            ),
-            const SizedBox(height: 16),
-            const Text('Audio call in progress...', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('End Call', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -322,7 +293,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final textSecColor = context.rovlo.textSecondary;
 
     final chatProvider = context.watch<ChatProvider>();
-    final conv = chatProvider.getConversation(widget.args.name);
+    final conv = chatProvider.getConversation(widget.args.peerId);
     final messages = conv?.messages ?? [];
 
     return Scaffold(
@@ -333,29 +304,30 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         ),
         title: GestureDetector(
           onTap: () {
-            if (_isBot) {
+            if (_isSystem) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('🤖 Rovlo is your automated travel assistant!')),
+                SnackBar(
+                  content: Text(_isSupport
+                      ? 'Rovlo Support: send us a message or a photo and the team will reply here.'
+                      : '🤖 Rovlo is your automated travel assistant!'),
+                ),
               );
               return;
             }
 
-            final travelerName = widget.args.name;
-            final matchingTravelers = SampleTravelers.list.where((t) => t.name == travelerName);
-            final traveler = matchingTravelers.isNotEmpty
-                ? matchingTravelers.first
-                : Traveler(
-                    name: widget.args.name,
-                    age: 24,
-                    imageUrl: widget.args.imageUrl,
-                    imageUrls: [widget.args.imageUrl],
-                    location: 'Nearby',
-                    dateRange: 'This week',
-                    tags: const ['Traveler', 'Exploring'],
-                    isVerified: widget.args.isVerified,
-                    description: 'Fellow traveler on Rovlo exploring amazing destinations.',
-                    about: 'Fellow traveler on Rovlo exploring amazing destinations.',
-                  );
+            final traveler = Traveler(
+              id: widget.args.peerId,
+              name: widget.args.name,
+              age: 0,
+              imageUrl: widget.args.imageUrl,
+              imageUrls: [widget.args.imageUrl],
+              location: '',
+              dateRange: '',
+              tags: const [],
+              isVerified: widget.args.isVerified,
+              description: '',
+              about: '',
+            );
 
             Navigator.push(
               context,
@@ -368,7 +340,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             children: [
               Stack(
                 children: [
-                  _isBot
+                  _isSystem
                       ? Container(
                           width: 36,
                           height: 36,
@@ -385,7 +357,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         )
                       : CircleAvatar(
                           radius: 18,
-                          backgroundImage: NetworkImage(widget.args.imageUrl),
+                          backgroundImage: CachedNetworkImageProvider(widget.args.imageUrl),
                         ),
                   Positioned(
                     right: 0,
@@ -426,10 +398,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       ],
                     ),
                     Text(
-                      _isBot ? 'Travel Assistant Bot' : 'Online',
+                      _isSupport ? 'Support team' : (_isBot ? 'Travel Assistant Bot' : 'Online'),
                       style: TextStyle(
                         fontSize: 11,
-                        color: _isBot ? AppColors.primary : Colors.green,
+                        color: _isSystem ? AppColors.primary : Colors.green,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -439,24 +411,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ],
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.call_outlined),
-            onPressed: _makeAudioCall,
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Chat options: Notifications on, End-to-end simulated.')),
-              );
-            },
-          ),
-        ],
       ),
-      body: Column(
+      body: KeyboardAvoiding(
+        child: Column(
         children: [
-          if (_showSafetyBanner && !_isBot)
+          if (_showSafetyBanner && !_isSystem)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -494,7 +453,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
 
           Expanded(
-            child: ListView.builder(
+            child: (_isSupport && messages.isEmpty)
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 36),
+                      child: Text(
+                        'Hi! 👋 How can we help?\nSend a message or a photo and the Rovlo team will reply here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: textSecColor, height: 1.5),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               itemCount: messages.length,
@@ -507,7 +477,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (!msg.isMe) ...[
-                        _isBot
+                        _isSystem
                             ? Container(
                                 width: 28,
                                 height: 28,
@@ -524,7 +494,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                               )
                             : CircleAvatar(
                                 radius: 14,
-                                backgroundImage: NetworkImage(widget.args.imageUrl),
+                                backgroundImage: CachedNetworkImageProvider(widget.args.imageUrl),
                               ),
                         const SizedBox(width: 8),
                       ],
@@ -633,7 +603,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Uploading image to Cloudinary...',
+                    'Uploading photo...',
                     style: TextStyle(fontSize: 12, color: primaryPeach, fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -641,6 +611,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
 
           SafeArea(
+            top: false,
+            bottom: context.keyboardInset == 0,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
@@ -705,6 +677,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

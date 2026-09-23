@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
@@ -46,7 +47,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
             left: 24,
             right: 24,
             top: 24,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            bottom: KeyboardInset.of(ctx) + 24,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

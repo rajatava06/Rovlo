@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_back_button.dart';
 import '../../models/traveler.dart';
+import '../../providers/chat_provider.dart';
+import '../../services/traveler_repository.dart';
 
 /// Full-screen profile view for a traveler. Shows photos, name, age,
 /// verified badge, tags, and about section. Does NOT show home base or location.
@@ -30,6 +35,30 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
     super.dispose();
   }
 
+  /// Stores the like / save in the database.
+  Future<void> _swipe(SwipeKind kind) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final chat = context.read<ChatProvider>();
+    final name = widget.traveler.name;
+    try {
+      final match = await TravelerRepository().swipe(widget.traveler.id, kind);
+      if (kind == SwipeKind.like) {
+        unawaited(chat.onLiked());
+        navigator.pop();
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text(kind == SwipeKind.save
+            ? 'Saved $name to your favorites! 🔖'
+            : (match ? "It's a match with $name! 🎉 Say hi in Chats." : 'You liked $name!')),
+      ));
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not save that. Check your connection.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -37,7 +66,7 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
     final traveler = widget.traveler;
 
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
       body: CustomScrollView(
         slivers: [
           // ── Photo Gallery ─────────────────────────────────────────────────
@@ -111,7 +140,7 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
                   Row(
                     children: [
                       Text(
-                        '${traveler.name}, ${traveler.age}',
+                        traveler.nameWithAge,
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
@@ -177,12 +206,7 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
                         child: SizedBox(
                           height: 52,
                           child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('You liked ${traveler.name}!')),
-                              );
-                            },
+                            onPressed: () => _swipe(SwipeKind.like),
                             icon: const Icon(Icons.favorite, color: Colors.white),
                             label: const Text(
                               'Like',
@@ -203,11 +227,7 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
                         height: 52,
                         width: 56,
                         child: OutlinedButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Saved ${traveler.name} to your favorites! 🔖')),
-                            );
-                          },
+                          onPressed: () => _swipe(SwipeKind.save),
                           style: OutlinedButton.styleFrom(
                             side: BorderSide(color: primaryPeach.withValues(alpha: 0.5)),
                             shape: RoundedRectangleBorder(

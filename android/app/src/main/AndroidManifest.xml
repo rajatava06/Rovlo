@@ -9,9 +9,6 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_GOOGLE_MAPS_API_KEY_HERE"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -49,6 +46,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher: open https links (tickets, directions) in the browser/app -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

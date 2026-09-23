@@ -1,11 +1,15 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/glass.dart';
 import '../../models/hot_event.dart';
+import '../../services/events_repository.dart';
 
 class EventDetailsScreen extends StatefulWidget {
   final HotEvent event;
@@ -18,203 +22,84 @@ class EventDetailsScreen extends StatefulWidget {
 
 class _EventDetailsScreenState extends State<EventDetailsScreen> {
   bool _isSaved = false;
+  final EventsRepository _repo = EventsRepository();
 
-  void _showBookingModal(BuildContext context) {
-    HapticFeedback.mediumImpact();
-    final event = widget.event;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF131D2D) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: event.themeColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.confirmation_num_outlined,
-                      color: event.themeColor, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Select Booking Platform',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 17,
-                        ),
-                      ),
-                      Text(
-                        'Instant ticketing & guaranteed entry',
-                        style: TextStyle(
-                          color: context.rovlo.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Option 1: Book on District
-            _BookingPlatformTile(
-              platformName: 'District App by Zomato',
-              badgeText: 'Official Partner',
-              badgeColor: const Color(0xFFE23744),
-              subtitle: 'Exclusive discounts & fast-track digital QR pass',
-              icon: Icons.local_activity,
-              themeColor: const Color(0xFFE23744),
-              onTap: () {
-                Navigator.pop(ctx);
-                _simulateRedirect(
-                  platformName: 'District',
-                  url: event.districtUrl,
-                );
-              },
-            ),
-
-            const SizedBox(height: 12),
-
-            // Option 2: Search on Google Events
-            _BookingPlatformTile(
-              platformName: 'Google Events & Official Box Office',
-              badgeText: 'Google Verified',
-              badgeColor: const Color(0xFF4285F4),
-              subtitle: 'Compare all verified ticket sellers & directions',
-              icon: Icons.travel_explore,
-              themeColor: const Color(0xFF4285F4),
-              onTap: () {
-                Navigator.pop(ctx);
-                _simulateRedirect(
-                  platformName: 'Google Events',
-                  url: event.googleUrl,
-                );
-              },
-            ),
-
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                'Price: ${event.price} • Verified by Rovlo Hotlist',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.rovlo.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _repo.savedIds().then((ids) {
+      if (mounted) setState(() => _isSaved = ids.contains(widget.event.id));
+    });
   }
 
-  void _simulateRedirect({required String platformName, required String url}) {
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: widget.event.themeColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.open_in_browser, color: widget.event.themeColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Redirecting to $platformName',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You are being directed to $platformName for ${widget.event.title}.',
-              style: const TextStyle(fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                url,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  color: Colors.blue,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: widget.event.themeColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('✓ Opening $platformName booking portal...'),
-                  backgroundColor: widget.event.themeColor,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
-            child: const Text('Continue to Book',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+  Future<void> _toggleSaved() async {
+    HapticFeedback.selectionClick();
+    final next = !_isSaved;
+    setState(() => _isSaved = next);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _repo.setSaved(widget.event.id, next);
+      messenger.showSnackBar(SnackBar(
+        content: Text(next ? 'Saved to your Hotlist ✓' : 'Removed from Hotlist'),
+        duration: const Duration(milliseconds: 900),
+      ));
+    } catch (_) {
+      if (mounted) setState(() => _isSaved = !next);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not update. Check your connection.')),
+      );
+    }
+  }
+
+  Future<void> _open(String url) async {
+    final uri = Uri.tryParse(url);
+    final messenger = ScaffoldMessenger.of(context);
+    if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      messenger.showSnackBar(const SnackBar(content: Text('Could not open the link.')));
+    }
+  }
+
+  Future<void> _openDirections() async {
+    final e = widget.event;
+    final q = (e.latitude != null && e.longitude != null)
+        ? '${e.latitude},${e.longitude}'
+        : Uri.encodeComponent('${e.venue} ${e.city}');
+    await _open('https://www.google.com/maps/search/?api=1&query=$q');
+  }
+
+  /// Name of the ticket seller, taken from the event's own booking link.
+  static String _platformName(String url) {
+    final host = (Uri.tryParse(url)?.host ?? '').toLowerCase();
+    const known = <String, String>{
+      'district.in': 'District',
+      'bookmyshow': 'BookMyShow',
+      'bookmy.show': 'BookMyShow',
+      'bms.app.link': 'BookMyShow',
+      'ticketmaster': 'Ticketmaster',
+      'insider.in': 'Insider',
+      'paytm': 'Paytm Insider',
+      'eventbrite': 'Eventbrite',
+      'bandsintown': 'Bandsintown',
+      'viagogo': 'Viagogo',
+      'ticketgenie': 'TicketGenie',
+      'events.com': 'Events.com',
+      'indiax.com': 'IndiaX',
+    };
+    for (final e in known.entries) {
+      if (host.contains(e.key)) return e.value;
+    }
+    final parts = host.replaceFirst('www.', '').split('.');
+    if (parts.isEmpty || parts.first.isEmpty) return 'the seller';
+    return parts.first[0].toUpperCase() + parts.first.substring(1);
+  }
+
+  /// Opens the original seller's page. Events without a known seller link fall
+  /// back to a Google search for the event, and the button says so.
+  Future<void> _book() async {
+    HapticFeedback.mediumImpact();
+    final e = widget.event;
+    final url = (e.ticketUrl != null && e.ticketUrl!.isNotEmpty) ? e.ticketUrl! : e.googleUrl;
+    await _open(url);
   }
 
   @override
@@ -236,7 +121,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   colors: [
                     event.themeColor.withValues(alpha: isDark ? 0.42 : 0.28),
                     event.themeColor.withValues(alpha: isDark ? 0.16 : 0.08),
-                    isDark ? AppColors.darkBackground : const Color(0xFFFAF8F3),
+                    isDark ? AppColors.darkBackground : AppColors.lightBackground,
                   ],
                   stops: const [0.0, 0.42, 0.85],
                 ),
@@ -253,44 +138,35 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                 expandedHeight: 300,
                 pinned: true,
                 stretch: true,
-                backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+                backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
                 leading: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: CircleAvatar(
-                    backgroundColor: Colors.black45,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                  child: GlassCircleButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ),
                 actions: [
-                  CircleAvatar(
-                    backgroundColor: Colors.black45,
-                    child: IconButton(
-                      icon: Icon(
-                        _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                        color: _isSaved ? event.themeColor : Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        setState(() => _isSaved = !_isSaved);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(_isSaved ? 'Saved to your Hotlist ✓' : 'Removed from Hotlist'),
-                            duration: const Duration(milliseconds: 900),
-                          ),
-                        );
-                      },
+                  Center(
+                    child: GlassCircleButton(
+                      icon: _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      iconColor: _isSaved ? event.themeColor : Colors.white,
+                      tooltip: 'Save',
+                      onPressed: _toggleSaved,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  CircleAvatar(
-                    backgroundColor: Colors.black45,
-                    child: IconButton(
-                      icon: const Icon(Icons.share_outlined, color: Colors.white, size: 20),
-                      onPressed: () {
+                  Center(
+                    child: GlassCircleButton(
+                      icon: Icons.share_outlined,
+                      tooltip: 'Copy link',
+                      onPressed: () async {
+                        final link = event.ticketUrl ?? event.googleUrl;
+                        await Clipboard.setData(ClipboardData(
+                          text: '${event.title} — ${event.date}\n$link',
+                        ));
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Event link copied to clipboard! 📋')),
                         );
@@ -303,14 +179,19 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        event.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: event.themeColor.withValues(alpha: 0.3),
-                          child: const Icon(Icons.event, size: 64),
-                        ),
-                      ),
+                      event.imageUrl.isEmpty
+                          ? Container(
+                              color: event.themeColor.withValues(alpha: 0.35),
+                              child: const Icon(Icons.celebration_outlined, size: 64, color: Colors.white70),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: event.imageUrl,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Container(
+                                color: event.themeColor.withValues(alpha: 0.3),
+                                child: const Icon(Icons.event, size: 64),
+                              ),
+                            ),
                       // Scrim
                       Container(
                         decoration: BoxDecoration(
@@ -333,60 +214,26 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                         right: 16,
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: event.themeColor,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                event.category.toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 11,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
+                            GlassBadge(
+                              label: event.category.toUpperCase(),
+                              fontSize: 11,
                             ),
                             const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(20),
+                            if (event.rating != null)
+                              GlassBadge(
+                                label: '${event.rating}',
+                                icon: Icons.star_rounded,
+                                iconColor: Colors.amber,
+                                fontSize: 12,
+                                horizontalPadding: 10,
                               ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.star, color: Colors.amber, size: 14),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${event.rating}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                             const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(20),
+                            if (event.attending.isNotEmpty)
+                              GlassBadge(
+                                label: event.attending,
+                                fontSize: 12,
+                                horizontalPadding: 10,
                               ),
-                              child: Text(
-                                event.attending,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -447,7 +294,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                         icon: Icons.calendar_month_outlined,
                         iconColor: event.themeColor,
                         title: event.date,
-                        subtitle: event.time,
+                        subtitle: event.time.isEmpty ? 'Time to be announced' : event.time,
                       ),
 
                       const SizedBox(height: 12),
@@ -459,11 +306,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                         title: event.venue,
                         subtitle: '${event.city} • Tap for directions',
                         trailingAction: TextButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Opening maps to ${event.venue}...')),
-                            );
-                          },
+                          onPressed: _openDirections,
                           child: const Text('Directions'),
                         ),
                       ),
@@ -558,12 +401,12 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'District & Google Events Verified',
+                                    'Booked on the seller\'s own site',
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Tickets purchased via partner channels are 100% genuine with instant QR entry.',
+                                    'Rovlo lists events found on Google Events and ticketing partners. Always check the details with the organiser before you pay.',
                                     style: TextStyle(fontSize: 11.5, color: textSec),
                                   ),
                                 ],
@@ -589,7 +432,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
               decoration: BoxDecoration(
                 color: isDark
                     ? const Color(0xFF0F172A).withValues(alpha: 0.95)
-                    : Colors.white.withValues(alpha: 0.95),
+                    : AppColors.lightBackground.withValues(alpha: 0.97),
                 border: Border(
                   top: BorderSide(
                     color: isDark ? Colors.white12 : Colors.black12,
@@ -636,7 +479,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                       child: SizedBox(
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: () => _showBookingModal(context),
+                          onPressed: _book,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: event.themeColor,
                             foregroundColor: Colors.white,
@@ -648,14 +491,20 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(Icons.confirmation_num_outlined, size: 18),
-                              SizedBox(width: 8),
-                              Text(
-                                'Booking Options',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
+                            children: [
+                              const Icon(Icons.confirmation_num_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  (event.ticketUrl != null && event.ticketUrl!.isNotEmpty)
+                                      ? 'Book on ${_platformName(event.ticketUrl!)}'
+                                      : 'Find tickets on Google',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
                                 ),
                               ),
                             ],
@@ -737,105 +586,6 @@ class _InfoCard extends StatelessWidget {
           ),
           if (trailingAction != null) trailingAction!,
         ],
-      ),
-    );
-  }
-}
-
-class _BookingPlatformTile extends StatelessWidget {
-  const _BookingPlatformTile({
-    required this.platformName,
-    required this.badgeText,
-    required this.badgeColor,
-    required this.subtitle,
-    required this.icon,
-    required this.themeColor,
-    required this.onTap,
-  });
-
-  final String platformName;
-  final String badgeText;
-  final Color badgeColor;
-  final String subtitle;
-  final IconData icon;
-  final Color themeColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: themeColor.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: themeColor.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: themeColor, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            platformName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: badgeColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            badgeText,
-                            style: TextStyle(
-                              color: badgeColor,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: context.rovlo.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-            ],
-          ),
-        ),
       ),
     );
   }

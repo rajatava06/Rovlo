@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -122,7 +123,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
         ],
       ),
-      body: SafeArea(
+      body: KeyboardAvoiding(
+        child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -425,6 +427,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const SizedBox(height: 20),
             ],
           ),
+        ),
         ),
       ),
     );

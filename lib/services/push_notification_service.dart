@@ -1,93 +1,79 @@
-import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import '../main.dart' show firebaseInitialized;
 
-/// Handles FCM Push Notifications (Foreground, Background, Token Registration)
+import '../main.dart' show firebaseInitialized;
+import 'user_repository.dart';
+
+/// Firebase Cloud Messaging: asks for permission, obtains the device token and
+/// stores it on the signed-in user's profile so the `send-push` Edge Function
+/// can reach the device.
 class PushNotificationService {
   factory PushNotificationService() => _instance;
   PushNotificationService._internal();
-  static final PushNotificationService _instance = PushNotificationService._internal();
+  static final PushNotificationService _instance =
+      PushNotificationService._internal();
 
-  FirebaseMessaging? get _messaging => firebaseInitialized ? FirebaseMessaging.instance : null;
+  FirebaseMessaging? get _messaging =>
+      firebaseInitialized ? FirebaseMessaging.instance : null;
 
   String? _fcmToken;
   String? get fcmToken => _fcmToken;
 
-  static const String _backendApiUrl = 'http://localhost:5000/api/notifications/register-token';
+  bool _initialised = false;
+  String? _userId;
+  final UserRepository _users = UserRepository();
 
-  /// Initialize FCM Push Notifications
+  /// Requests permission and fetches the token (call once at start-up).
   Future<void> initialize() async {
-    if (!firebaseInitialized || _messaging == null) {
-      debugPrint('[PushNotificationService] Firebase not initialized — running in local fallback mode.');
-      return;
-    }
+    final messaging = _messaging;
+    if (messaging == null || _initialised) return;
+    _initialised = true;
 
     try {
-      // 1. Request notification permissions (iOS & Android 13+)
-      final settings = await _messaging!.requestPermission(
+      final settings = await messaging.requestPermission(
         alert: true,
-        announcement: false,
         badge: true,
-        carPlay: false,
-        criticalAlert: false,
-        provisional: false,
         sound: true,
       );
-
-      debugPrint('[PushNotificationService] User granted permission: ${settings.authorizationStatus}');
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-          settings.authorizationStatus == AuthorizationStatus.provisional) {
-        
-        // 2. Fetch FCM Token
-        _fcmToken = await _messaging!.getToken();
-        debugPrint('[PushNotificationService] FCM Token: $_fcmToken');
-
-        // 3. Listen for token refresh
-        _messaging!.onTokenRefresh.listen((newToken) {
-          _fcmToken = newToken;
-          debugPrint('[PushNotificationService] FCM Token refreshed: $newToken');
-        });
-
-        // 4. Handle Foreground Messages
-        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          debugPrint('[PushNotificationService] Foreground Message received: ${message.notification?.title}');
-          debugPrint('Body: ${message.notification?.body}');
-        });
-
-        // 5. Handle Notification Taps (App opened from notification)
-        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-          debugPrint('[PushNotificationService] App opened from notification: ${message.notification?.title}');
-        });
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return;
       }
+      _fcmToken = await messaging.getToken();
+      messaging.onTokenRefresh.listen((token) {
+        _fcmToken = token;
+        _save();
+      });
+      await _save();
     } catch (e) {
-      debugPrint('[PushNotificationService] Error initializing push notifications: $e');
+      debugPrint('[PushNotificationService] init failed: $e');
     }
   }
 
-  /// Register FCM Token with Rovlo-Backend server
-  Future<bool> registerTokenWithBackend(String userId) async {
-    if (_fcmToken == null || _fcmToken!.isEmpty) return false;
+  /// Links this device's token to the signed-in user.
+  Future<void> bindUser(String userId) async {
+    _userId = userId;
+    await _save();
+  }
 
+  Future<void> _save() async {
+    final id = _userId;
+    final token = _fcmToken;
+    if (id == null || token == null || token.isEmpty) return;
     try {
-      final response = await http.post(
-        Uri.parse(_backendApiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'userId': userId,
-          'fcmToken': _fcmToken,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        debugPrint('[PushNotificationService] Token successfully registered with Rovlo-Backend.');
-        return true;
-      }
+      await _users.setFcmToken(id, token);
     } catch (e) {
-      debugPrint('[PushNotificationService] Backend registration failed: $e');
+      debugPrint('[PushNotificationService] could not save token: $e');
     }
-    return false;
+  }
+
+  /// Removes the token from the profile so a signed-out device gets no pushes.
+  Future<void> unbindCurrentUser() async {
+    final id = _userId;
+    _userId = null;
+    if (id == null) return;
+    try {
+      await _users.setFcmToken(id, null);
+    } catch (_) {}
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
@@ -204,7 +205,7 @@ class _PaymentModalState extends State<_PaymentModal> {
         left: 24,
         right: 24,
         top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: KeyboardInset.of(context) + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

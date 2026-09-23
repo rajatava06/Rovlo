@@ -55,82 +55,18 @@ That's it — the app runs immediately in **demo mode** with no backend.
 
 ## 👑 Admin access
 
-Admin rights are controlled in **one place** —
-`lib/core/constants/app_constants.dart`:
+Admins are stored in the database, not in the app: add an email to the
+`admin_emails` table (and to `support_agents` for the support inbox) — see
+`Rovlo-Backend/SUPABASE_SETUP.md`. Anyone who signs in with that Google account
+gets **Profile → Admin Panel**. No app update is needed.
 
-```dart
-static const List<String> adminEmails = <String>[
-  'hellorovlo2026@gmail.com',   // ← change / add admin emails here
-];
-```
+## ⚙️ Configuration
 
-Any account whose email matches gets an **Admin panel** entry under
-**Profile → Admin**. Because demo Google/Apple sign-in returns a random email,
-the easiest way to test the panel is to point one of your local accounts at an
-admin email (or temporarily add that random email to the list).
+Two git-ignored files hold your values (nothing secret is in the source):
 
-> Tell me the exact admin email you want and I'll set it as the default.
-
----
-
-## 🎬 Background video
-
-Place a looping, muted, portrait `welcome.mp4` in `assets/videos/`
-(see `assets/videos/README.md`). Without it, the animated gradient background
-is used automatically.
-
----
-
-## 🔌 Connecting real authentication (Firebase)
-
-The app talks to a single `AuthService` (`lib/services/auth_service.dart`),
-so wiring real auth is isolated:
-
-1. Add `firebase_core`, `firebase_auth`, `google_sign_in`,
-   `sign_in_with_apple` to `pubspec.yaml`.
-2. Run `flutterfire configure` and uncomment the `Firebase.initializeApp(...)`
-   call in `lib/main.dart`.
-3. Replace the bodies of `signInWithGoogle`, `signInWithApple`,
-   `requestPhoneOtp` and `verifyPhoneOtp` with the real SDK calls — the
-   signatures already match, so nothing else in the app changes.
-4. Swap `UserRepository` (`lib/services/user_repository.dart`) from
-   `shared_preferences` to Firestore for a shared, admin-visible user list.
-
-### iOS notes
-- Apple sign-in: enable the **Sign in with Apple** capability in Xcode.
-- Add camera/notification usage strings to `ios/Runner/Info.plist` only if you
-  add those features. Video playback needs no special permission.
-
----
-
-## 🗂 Project structure
-
-```
-lib/
-├── main.dart                 # entry — providers + bootstrap
-├── app.dart                  # MaterialApp, theme wiring, routing
-├── core/
-│   ├── constants/            # app constants + ADMIN EMAILS
-│   ├── routing/              # named routes + shared page transition
-│   ├── theme/                # colours, ThemeData, ThemeProvider
-│   └── widgets/              # reusable UI (video bg, gradient bg, buttons…)
-├── models/                   # AppUser, Destination
-├── services/                 # AuthService, UserRepository
-├── providers/                # AuthProvider (session + onboarding state)
-└── features/
-    ├── welcome/              # Welcome screen
-    ├── auth/                 # phone, social, name, gender, travel steps
-    ├── home/                 # explore / saved / profile tabs
-    ├── settings/             # dark/light appearance
-    └── admin/                # admin panel
-```
-
----
-
-## 🧪 Tests
-
-```bash
-flutter test
-```
-
-A smoke test verifies the Welcome screen renders its wordmark and CTAs.
+1. `assets/config/app_config.json` — copy `app_config.example.json` and fill in
+   the Supabase URL + publishable key, Google Web client id and (optional)
+   MapTiler key. It is bundled into the app, so plain `flutter run` and release
+   builds work.
+2. `.env` — copy `.env.example`; only needed for the Firebase push values, or
+   to override the above via `--dart-define-from-file=.env`.

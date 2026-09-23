@@ -14,9 +14,6 @@
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**
 
-# Google Maps Keep Rules
--keep class com.google.android.gms.maps.** { *; }
--keep interface com.google.android.gms.maps.** { *; }
 
 # Video Player / ExoPlayer
 -keep class com.google.android.exoplayer2.** { *; }

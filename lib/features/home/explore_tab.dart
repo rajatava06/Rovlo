@@ -1,13 +1,22 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/rovlo_loader.dart';
 import '../../core/widgets/rovlo_logo.dart';
+import '../../models/admin_notification.dart';
 import '../../models/traveler.dart';
+import '../../providers/chat_provider.dart';
+import '../../services/notification_service.dart';
+import '../../services/traveler_repository.dart';
 import 'traveler_profile_screen.dart';
 
 class ExploreTab extends StatefulWidget {
@@ -42,32 +51,14 @@ class _ExploreTabState extends State<ExploreTab> {
     return '$_selectedWeek, $_selectedMonth $_selectedYear';
   }
 
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'id': '1',
-      'icon': Icons.favorite,
-      'iconColor': AppColors.primary,
-      'title': 'New Match!',
-      'description': 'Elena liked your profile back. Start chatting now!',
-      'time': '2 mins ago',
-    },
-    {
-      'id': '2',
-      'icon': Icons.person_pin_circle,
-      'iconColor': AppColors.accent,
-      'title': 'Traveler nearby',
-      'description': 'Julian is also in Bali and looking for backpackers.',
-      'time': '1 hour ago',
-    },
-    {
-      'id': '3',
-      'icon': Icons.info_outline,
-      'iconColor': Colors.blue,
-      'title': 'Welcome to Rovlo',
-      'description': 'Explore maps, find friends and enjoy your trip!',
-      'time': 'Yesterday',
-    },
-  ];
+  // Real notifications: admin broadcasts + new matches (from the database).
+  final List<Map<String, dynamic>> _notifications = [];
+
+  final TravelerRepository _repo = TravelerRepository();
+  List<Traveler> _travelers = const [];
+  bool _loadingTravelers = true;
+  bool _loadFailed = false;
+  int _loadToken = 0;
 
   // Current profile index for the swipe-style discover
   int _currentProfileIndex = 0;
@@ -91,15 +82,112 @@ class _ExploreTabState extends State<ExploreTab> {
   @override
   void initState() {
     super.initState();
+    _loadTravelers();
     _loadNotifications();
   }
 
-  Future<void> _loadNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
-    final dismissed = prefs.getStringList('dismissed_notifications') ?? [];
+  /// Loads the discover feed from the database. In "Going to..." mode only
+  /// travellers heading to / living in the chosen place are returned.
+  Future<void> _loadTravelers() async {
+    final token = ++_loadToken;
     setState(() {
-      _notifications.removeWhere((item) => dismissed.contains(item['id']));
+      _loadingTravelers = true;
+      _loadFailed = false;
     });
+    try {
+      final list = await _repo.discover(
+        destination: _isNearMe ? null : _selectedLocation?.split(',').first.trim(),
+      );
+      if (!mounted || token != _loadToken) return;
+      setState(() {
+        _travelers = list;
+        _currentProfileIndex = 0;
+        _currentPhotoPage = 0;
+      });
+    } catch (_) {
+      if (mounted && token == _loadToken) setState(() => _loadFailed = true);
+    } finally {
+      if (mounted && token == _loadToken) {
+        setState(() => _loadingTravelers = false);
+      }
+    }
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final dismissed = prefs.getStringList('dismissed_notifications') ?? [];
+
+      final broadcasts = await NotificationService().getNotifications(limit: 20);
+      final matches = await _repo.matches();
+      final likedMe = await _repo.likesReceived();
+
+      final items = <Map<String, dynamic>>[
+        for (final m in matches.take(10))
+          {
+            'id': 'match_${m.id}',
+            'icon': Icons.favorite,
+            'iconColor': AppColors.primary,
+            'title': 'New Match!',
+            'description': 'You and ${m.name} liked each other. Start chatting now!',
+            'time': _ago(m.matchedAt),
+            'sort': m.matchedAt,
+          },
+        for (final l in likedMe.take(10))
+          {
+            'id': 'like_${l.id}',
+            'icon': Icons.favorite_border,
+            'iconColor': AppColors.primary,
+            'title': '${l.name} liked you',
+            'description': 'Open Chats → New Matches to accept and start talking.',
+            'time': _ago(l.likedAt),
+            'sort': l.likedAt,
+          },
+        for (final b in broadcasts)
+          {
+            'id': 'bc_${b.id}',
+            'icon': _iconFor(b.type),
+            'iconColor': AppColors.accent,
+            'title': b.title,
+            'description': b.body,
+            'time': _ago(b.sentAt),
+            'sort': b.sentAt,
+          },
+      ]
+        ..removeWhere((i) => dismissed.contains(i['id']))
+        ..sort((a, b) => (b['sort'] as DateTime).compareTo(a['sort'] as DateTime));
+
+      if (!mounted) return;
+      setState(() {
+        _notifications
+          ..clear()
+          ..addAll(items);
+      });
+    } catch (_) {
+      // Offline: keep whatever we have.
+    }
+  }
+
+  IconData _iconFor(NotificationType t) {
+    switch (t) {
+      case NotificationType.alert:
+        return Icons.warning_amber_rounded;
+      case NotificationType.promo:
+        return Icons.card_giftcard;
+      case NotificationType.update:
+        return Icons.system_update_alt;
+      case NotificationType.announcement:
+        return Icons.campaign_outlined;
+    }
+  }
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 1) return 'Just now';
+    if (d.inMinutes < 60) return '${d.inMinutes} mins ago';
+    if (d.inHours < 24) return '${d.inHours} hours ago';
+    if (d.inDays == 1) return 'Yesterday';
+    return '${d.inDays} days ago';
   }
 
   Future<void> _dismissNotificationPermanently(String id) async {
@@ -140,31 +228,21 @@ class _ExploreTabState extends State<ExploreTab> {
       _suggestions = [];
       _searchFocusNode.unfocus();
     });
+    _loadTravelers();
   }
 
   void _clearSearch() {
+    final hadLocation = _selectedLocation != null;
     setState(() {
       _selectedLocation = null;
       _searchController.clear();
       _query = '';
       _suggestions = [];
     });
+    if (hadLocation) _loadTravelers();
   }
 
-  List<Traveler> get _filteredTravelers {
-    if (_isNearMe) {
-      return SampleTravelers.list;
-    } else {
-      if (_selectedLocation == null || _query.isEmpty) {
-        return SampleTravelers.list;
-      }
-      final searchTerms = _query.toLowerCase().split(',');
-      final primaryTerm = searchTerms.first.trim();
-      return SampleTravelers.list.where((t) {
-        return t.location.toLowerCase().contains(primaryTerm);
-      }).toList();
-    }
-  }
+  List<Traveler> get _filteredTravelers => _travelers;
 
   Traveler? get _currentTraveler {
     final list = _filteredTravelers;
@@ -172,45 +250,77 @@ class _ExploreTabState extends State<ExploreTab> {
     return list[_currentProfileIndex];
   }
 
-  void _nextProfile(String action) {
+  Future<void> _nextProfile(String action) async {
     final traveler = _currentTraveler;
     if (traveler == null) return;
 
-    String message;
-    switch (action) {
-      case 'reject':
-        message = 'Passed on ${traveler.name}';
-        break;
-      case 'like':
-        message = 'You liked ${traveler.name}! 💕';
-        break;
-      case 'save':
-        message = 'Saved ${traveler.name} for later 🔖';
-        break;
-      default:
-        message = '';
-    }
+    final kind = switch (action) {
+      'like' => SwipeKind.like,
+      'save' => SwipeKind.save,
+      _ => SwipeKind.pass,
+    };
 
-    if (message.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 1),
+    // Move on immediately; the write happens in the background.
+    setState(() {
+      _travelers = List.of(_travelers)..removeAt(_currentProfileIndex);
+      if (_currentProfileIndex >= _travelers.length) _currentProfileIndex = 0;
+      _currentPhotoPage = 0;
+      if (_photoPageController.hasClients) _photoPageController.jumpToPage(0);
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final match = await _repo.swipe(traveler.id, kind);
+      if (!mounted) return;
+      final message = switch (kind) {
+        SwipeKind.pass => 'Passed on ${traveler.name}',
+        SwipeKind.save => 'Saved ${traveler.name} for later 🔖',
+        SwipeKind.like => match
+            ? "It's a match with ${traveler.name}! 🎉 Say hi in Chats."
+            : 'You liked ${traveler.name}! 💕',
+      };
+      messenger.showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ));
+      if (kind == SwipeKind.like) {
+        // Show them as "Pending" (or as a new match) in Chats straight away.
+        unawaited(context.read<ChatProvider>().onLiked());
+      }
+      if (match) _loadNotifications();
+    } catch (_) {
+      if (!mounted) return;
+      // Put the card back so nothing is silently lost.
+      setState(() => _travelers = [traveler, ..._travelers]);
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Could not save that. Check your connection.'),
+      ));
+    }
+  }
+
+  Future<void> _saveTrip() async {
+    final place = _selectedLocation;
+    if (place == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _repo.saveTrip(
+        destination: place,
+        week: _selectedWeek,
+        month: _selectedMonth,
+        year: _selectedYear,
+      );
+      messenger.showSnackBar(SnackBar(
+        backgroundColor: Colors.green.shade600,
+        content: Text(
+          '✈️ Trip to $place for $_selectedTravelDate has been saved to your profile!',
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
+      ));
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not save the trip. Check your connection.')),
       );
     }
-
-    setState(() {
-      if (_currentProfileIndex + 1 < _filteredTravelers.length) {
-        _currentProfileIndex++;
-      } else {
-        _currentProfileIndex = 0; // Loop back
-      }
-      _currentPhotoPage = 0;
-      if (_photoPageController.hasClients) {
-        _photoPageController.jumpToPage(0);
-      }
-    });
   }
 
   void _openTravelerProfile(Traveler traveler) {
@@ -473,6 +583,7 @@ class _ExploreTabState extends State<ExploreTab> {
                           : AppColors.elementBlack,
                     ),
                   ),
+                  if (_notifications.isNotEmpty)
                   Positioned(
                     right: 12,
                     top: 12,
@@ -549,8 +660,12 @@ class _ExploreTabState extends State<ExploreTab> {
                         onTap: () {
                           setState(() {
                             _isNearMe = true;
-                            _clearSearch();
+                            _selectedLocation = null;
+                            _searchController.clear();
+                            _query = '';
+                            _suggestions = [];
                           });
+                          _loadTravelers();
                         },
                         child: Center(
                           child: Text(
@@ -572,6 +687,7 @@ class _ExploreTabState extends State<ExploreTab> {
                           setState(() {
                             _isNearMe = false;
                           });
+                          _loadTravelers();
                         },
                         child: Center(
                           child: Text(
@@ -743,17 +859,7 @@ class _ExploreTabState extends State<ExploreTab> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: InkWell(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: Colors.green.shade600,
-                    content: Text(
-                      '✈️ Trip to $_selectedLocation for $_selectedTravelDate has been saved to your profile!',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                );
-              },
+              onTap: _saveTrip,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -786,14 +892,38 @@ class _ExploreTabState extends State<ExploreTab> {
 
         // ── Single Profile Card / Result List ───────────────────────────────────
         Expanded(
-          child: _currentTraveler == null
+          child: _loadingTravelers
               ? Center(
-                  child: Text(
-                    'No travelers found in this area.',
-                    style: TextStyle(color: textSecColor),
+                  child: RovloLoader(
+                    size: 96,
+                    messages: [
+                      _isNearMe ? 'Finding travellers near you…' : 'Finding travellers going there…',
+                      'Meeting your next travel buddy…',
+                    ],
                   ),
                 )
-              : _ProfileCard(
+              : _loadFailed
+                  ? Center(
+                      child: TextButton.icon(
+                        onPressed: _loadTravelers,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Could not load travellers. Tap to retry'),
+                      ),
+                    )
+                  : _currentTraveler == null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              _isNearMe
+                                  ? "You're all caught up! New travellers will show up here as they join."
+                                  : 'No travellers heading to this place yet.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: textSecColor),
+                            ),
+                          ),
+                        )
+                      : _ProfileCard(
                   key: ValueKey(_currentProfileIndex),
                   traveler: _currentTraveler!,
                   photoPageController: _photoPageController,
@@ -838,288 +968,339 @@ class _ProfileCard extends StatelessWidget {
   List<String> get _images =>
       traveler.imageUrls.isNotEmpty ? traveler.imageUrls : [traveler.imageUrl];
 
+  /// Tap left / right thirds of the photo to flip through pictures, tap the
+  /// middle to open the full profile.
+  void _onPhotoTap(double dx, double width) {
+    final count = _images.length;
+    if (count > 1 && dx < width * 0.3) {
+      if (currentPhotoPage > 0) {
+        photoPageController.previousPage(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    } else if (count > 1 && dx > width * 0.7) {
+      if (currentPhotoPage < count - 1) {
+        photoPageController.nextPage(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    } else {
+      onTapProfile();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryPeach =
-        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final primary = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final cardColor = isDark ? AppColors.darkCard : AppColors.lightCard;
+    final about = traveler.about.isNotEmpty ? traveler.about : traveler.description;
+    final locationText = traveler.dateRange.isNotEmpty
+        ? '${traveler.location} · ${traveler.dateRange}'
+        : traveler.location;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 76),
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 84),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(32),
+        color: cardColor,
         border: Border.all(
           color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
+              ? Colors.white.withValues(alpha: 0.06)
               : Colors.black.withValues(alpha: 0.05),
         ),
         boxShadow: [
           BoxShadow(
+            color: primary.withValues(alpha: isDark ? 0.18 : 0.14),
+            blurRadius: 32,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
             color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // ── Photo Section (Scrollable horizontally) ─────────────────────
+          // ── Photo + overlays ─────────────────────────────────────────────
           Expanded(
-            child: GestureDetector(
-              onTap: onTapProfile,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  PageView.builder(
-                    controller: photoPageController,
-                    itemCount: _images.length,
-                    onPageChanged: onPhotoPageChanged,
-                    itemBuilder: (context, index) {
-                      return Image.network(
-                        _images[index],
+            child: LayoutBuilder(
+              builder: (context, box) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (d) => _onPhotoTap(d.localPosition.dx, box.maxWidth),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    PageView.builder(
+                      controller: photoPageController,
+                      itemCount: _images.length,
+                      onPageChanged: onPhotoPageChanged,
+                      itemBuilder: (context, index) => CachedNetworkImage(
+                        imageUrl: _images[index],
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        fadeInDuration: const Duration(milliseconds: 180),
+                        placeholder: (_, __) => Container(
+                          color: primary.withValues(alpha: 0.10),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
                           color: Colors.grey.shade300,
-                          child: const Icon(Icons.broken_image, size: 50),
+                          child: const Icon(Icons.person, size: 64, color: Colors.white70),
                         ),
-                      );
-                    },
-                  ),
-                  // Photo indicators at top
-                  Positioned(
-                    top: 12,
-                    left: 16,
-                    right: 16,
-                    child: Row(
-                      children: List.generate(_images.length, (i) {
-                        return Expanded(
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: currentPhotoPage == i
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        );
-                      }),
+                      ),
                     ),
-                  ),
-                  // Verified shield
-                  if (traveler.isVerified)
+
+                    // Top scrim keeps the chips readable on bright photos.
                     Positioned(
-                      top: 24,
-                      left: 16,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: primaryPeach.withValues(alpha: 0.25),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.verified_user_outlined,
-                          color: Colors.white,
-                          size: 18,
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 120,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.45),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  // Location + Date badge
-                  Positioned(
-                    top: 24,
-                    right: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.calendar_today_outlined,
-                            size: 12,
-                            color: AppColors.accent,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${traveler.location} · ${traveler.dateRange}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
+
+                    // Bottom scrim for the text block.
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 280,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.55),
+                                Colors.black.withValues(alpha: 0.88),
+                              ],
+                              stops: const [0.0, 0.55, 1.0],
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+
+                    // Photo progress segments
+                    if (_images.length > 1)
+                      Positioned(
+                        top: 12,
+                        left: 16,
+                        right: 16,
+                        child: Row(
+                          children: List.generate(_images.length, (i) {
+                            return Expanded(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                margin: const EdgeInsets.symmetric(horizontal: 2),
+                                height: 3.5,
+                                decoration: BoxDecoration(
+                                  color: currentPhotoPage == i
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+
+                    // Top chips: verified (left) + where/when (right)
+                    Positioned(
+                      top: _images.length > 1 ? 28 : 18,
+                      left: 16,
+                      right: 16,
+                      child: Row(
+                        children: [
+                          if (traveler.isVerified)
+                            _GlassChip(
+                              icon: Icons.verified_rounded,
+                              iconColor: const Color(0xFF7CC4FF),
+                              label: 'Verified',
+                            ),
+                          const Spacer(),
+                          if (locationText.isNotEmpty)
+                            Flexible(
+                              child: _GlassChip(
+                                icon: Icons.flight_takeoff_rounded,
+                                label: locationText,
+                                maxWidth: 190,
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                  ),
-                  // Gradient overlay at bottom of image
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      height: 100,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.7),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Name + Age + About 1.5 lines preview overlay
-                  Positioned(
-                    bottom: 16,
-                    left: 20,
-                    right: 20,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              '${traveler.name}, ${traveler.age}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black45,
-                                    offset: Offset(0, 2),
-                                    blurRadius: 4,
-                                  )
-                                ],
-                              ),
+
+                    // Text block
+                    Positioned(
+                      left: 20,
+                      right: 20,
+                      bottom: 18,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            traveler.nameWithAge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 28,
+                              height: 1.1,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.4,
+                              shadows: const [
+                                Shadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 2)),
+                              ],
                             ),
-                            if (traveler.isVerified) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.check,
-                                  color: AppColors.primary,
-                                  size: 12,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        // About text overlay (1.5 lines with Read More)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                traveler.about.isNotEmpty
-                                    ? traveler.about
-                                    : traveler.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 13,
-                                  height: 1.3,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: onTapProfile,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Text(
-                                  'Read More',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
+                          ),
+                          if (traveler.distanceLabel.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.near_me_rounded, size: 14, color: Colors.white70),
+                                const SizedBox(width: 4),
+                                Text(
+                                  traveler.distanceLabel,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
+                              ],
+                            ),
+                          ],
+                          if (traveler.tags.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final tag in traveler.tags.take(3))
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.16),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+                                    ),
+                                    child: Text(
+                                      tag,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          if (about.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(text: about),
+                                  TextSpan(
+                                    text: '  Read more',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: Colors.white.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 13,
+                                height: 1.35,
                               ),
                             ),
                           ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
 
-          // ── Action Buttons Row (Above Floating Navbar) ───────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          // ── Action bar ───────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+            color: cardColor,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Reject (X)
-                _ActionButton(
-                  icon: Icons.close_rounded,
-                  color: Colors.red.shade400,
-                  size: 48,
-                  iconSize: 24,
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    onReject();
-                  },
+                _LabeledAction(
+                  label: 'Pass',
+                  child: _ActionButton(
+                    icon: Icons.close_rounded,
+                    color: Colors.red.shade400,
+                    size: 42,
+                    iconSize: 21,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      onReject();
+                    },
+                  ),
                 ),
-                // // Superlike (Star)
-                // _ActionButton(
-                //   icon: Icons.star_rounded,
-                //   color: Colors.amber.shade600,
-                //   size: 42,
-                //   iconSize: 22,
-                //   onTap: () {
-                //     HapticFeedback.lightImpact();
-                //     onSave();
-                //   },
-                // ),
-                // Like (Heart)
-                _ActionButton(
-                  icon: Icons.favorite_rounded,
-                  color: primaryPeach,
-                  size: 58,
-                  iconSize: 28,
-                  isPrimary: true,
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    onLike();
-                  },
+                _LabeledAction(
+                  label: 'Like',
+                  emphasised: true,
+                  child: _ActionButton(
+                    icon: Icons.favorite_rounded,
+                    color: primary,
+                    size: 52,
+                    iconSize: 25,
+                    isPrimary: true,
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      onLike();
+                    },
+                  ),
                 ),
-                // Save (Bookmark)
-                _ActionButton(
-                  icon: Icons.bookmark_rounded,
-                  color: const Color(0xFF2196F3),
-                  size: 42,
-                  iconSize: 20,
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    onSave();
-                  },
+                _LabeledAction(
+                  label: 'Save',
+                  child: _ActionButton(
+                    icon: Icons.bookmark_rounded,
+                    color: const Color(0xFF2196F3),
+                    size: 42,
+                    iconSize: 20,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      onSave();
+                    },
+                  ),
                 ),
               ],
             ),
@@ -1129,7 +1310,85 @@ class _ProfileCard extends StatelessWidget {
     )
         .animate()
         .fadeIn(duration: 300.ms)
-        .scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack);
+        .scale(begin: const Offset(0.96, 0.96), curve: Curves.easeOutBack);
+  }
+}
+
+/// Translucent pill used on top of photos.
+class _GlassChip extends StatelessWidget {
+  const _GlassChip({
+    required this.icon,
+    required this.label,
+    this.iconColor = Colors.white,
+    this.maxWidth,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color iconColor;
+  final double? maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: maxWidth ?? double.infinity),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: iconColor),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LabeledAction extends StatelessWidget {
+  const _LabeledAction({
+    required this.label,
+    required this.child,
+    this.emphasised = false,
+  });
+
+  final String label;
+  final Widget child;
+  final bool emphasised;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        child,
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: emphasised ? FontWeight.w700 : FontWeight.w600,
+            color: context.rovlo.textSecondary,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1246,51 +1505,6 @@ class _NotificationItem extends StatelessWidget {
                     TextStyle(color: context.rovlo.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 8),
-              if (title.contains('Match') ||
-                  title.contains('nearby') ||
-                  title.contains('liked')) ...[
-                Row(
-                  children: [
-                    ElevatedButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Accepted match request! 💕')),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text('Accept',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Request declined.')),
-                        );
-                      },
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child:
-                          const Text('Reject', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-              ],
               Text(
                 time,
                 style: TextStyle(

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -56,7 +57,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 left: 24,
                 right: 24,
                 top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                bottom: KeyboardInset.of(context) + 24,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -185,19 +186,24 @@ class _ProfileTabState extends State<ProfileTab> {
                             photos.remove(selectedAvatar);
                             photos.insert(0, selectedAvatar);
                           }
-                          await provider.updateProfile(
-                            name: nameController.text,
-                            bio: bioController.text,
-                            photoUrl: selectedAvatar,
-                            profilePhotos: photos,
-                            homeBase: homeBaseController.text.trim().isNotEmpty
-                                ? homeBaseController.text.trim()
-                                : null,
-                          );
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          final messenger = ScaffoldMessenger.of(context);
+                          try {
+                            await provider.updateProfile(
+                              name: nameController.text,
+                              bio: bioController.text,
+                              photoUrl: selectedAvatar,
+                              profilePhotos: photos,
+                              homeBase: homeBaseController.text.trim().isNotEmpty
+                                  ? homeBaseController.text.trim()
+                                  : null,
+                            );
+                            if (context.mounted) Navigator.pop(context);
+                            messenger.showSnackBar(
                               const SnackBar(content: Text('Profile updated successfully!')),
+                            );
+                          } catch (_) {
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('Could not save your profile. Check your connection.')),
                             );
                           }
                         },
@@ -284,7 +290,18 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _handlePhotoAction(BuildContext context, AuthProvider provider, AppUser user, String action) async {
+  Future<void> _handlePhotoAction(BuildContext context, AuthProvider provider, AppUser user, String action) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _handlePhotoActionInner(context, provider, user, action);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not update your photos. Check your connection.')),
+      );
+    }
+  }
+
+  Future<void> _handlePhotoActionInner(BuildContext context, AuthProvider provider, AppUser user, String action) async {
     final ImagePicker picker = ImagePicker();
     
     if (action == 'gallery') {
@@ -328,7 +345,7 @@ class _ProfileTabState extends State<ProfileTab> {
       final pinned = photos.removeAt(_currentPhotoPage);
       photos.insert(0, pinned);
       
-      provider.updateProfile(
+      await provider.updateProfile(
         profilePhotos: photos,
         photoUrl: pinned,
       );
@@ -349,7 +366,7 @@ class _ProfileTabState extends State<ProfileTab> {
       photos.removeAt(_currentPhotoPage);
       final newPrimary = photos.isNotEmpty ? photos.first : '';
       
-      provider.updateProfile(
+      await provider.updateProfile(
         profilePhotos: photos,
         photoUrl: newPrimary.isNotEmpty ? newPrimary : null,
       );
@@ -985,10 +1002,18 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
     if (confirm != true) return;
-    await provider.signOut();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await provider.deleteAccount();
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not delete your account. Check your connection and try again.')),
+      );
+      return;
+    }
     if (!context.mounted) return;
     Navigator.pushNamedAndRemoveUntil(context, Routes.welcome, (r) => false);
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       const SnackBar(content: Text('Your account has been deleted.')),
     );
   }

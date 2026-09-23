@@ -1,30 +1,63 @@
 import 'dart:async';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/backend/backend.dart';
 import '../models/admin_notification.dart';
 
+/// Admin broadcasts, stored in `public.broadcasts`.
+///
+/// * Everyone can read them and receives new ones live (Supabase Realtime)
+///   while the app is open — shown as an in-app banner.
+/// * Admins can send / delete. Sending also triggers the `send-push` Edge
+///   Function so devices with the app closed get a real push (FCM).
 class NotificationService {
-  static const String _notificationsKey = 'rovlo_admin_notifications';
-  
-  final StreamController<AdminNotification> _broadcastController =
+  factory NotificationService() => _instance;
+  NotificationService._();
+  static final NotificationService _instance = NotificationService._();
+
+  final StreamController<AdminNotification> _controller =
       StreamController<AdminNotification>.broadcast();
+  RealtimeChannel? _channel;
 
-  Stream<AdminNotification> get onNotification => _broadcastController.stream;
+  Stream<AdminNotification> get onNotification => _controller.stream;
 
-  Future<List<AdminNotification>> getNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rawList = prefs.getStringList(_notificationsKey) ?? [];
-    final notifications = rawList
-        .map((item) {
-          try {
-            return AdminNotification.fromJson(item);
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<AdminNotification>()
-        .toList();
-    notifications.sort((a, b) => b.sentAt.compareTo(a.sentAt));
-    return notifications;
+  SupabaseClient get _db => Backend.client;
+
+  /// Starts listening for new broadcasts (idempotent).
+  void start() {
+    if (_channel != null || !Backend.ready) return;
+    _channel = _db
+        .channel('rovlo-broadcasts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'broadcasts',
+          callback: (payload) {
+            try {
+              _controller.add(AdminNotification.fromRow(payload.newRecord));
+            } catch (e) {
+              debugPrint('[NotificationService] bad payload: $e');
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  Future<void> stop() async {
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) await _db.removeChannel(ch);
+  }
+
+  Future<List<AdminNotification>> getNotifications({int limit = 50}) async {
+    final rows = await _db
+        .from('broadcasts')
+        .select()
+        .order('sent_at', ascending: false)
+        .limit(limit);
+    return rows.map<AdminNotification>(AdminNotification.fromRow).toList();
   }
 
   Future<void> sendNotification({
@@ -34,41 +67,34 @@ class NotificationService {
     String targetAudience = 'All Users',
     String sentBy = 'Admin',
   }) async {
-    final notification = AdminNotification(
-      id: 'notif_${DateTime.now().millisecondsSinceEpoch}',
-      title: title,
-      body: body,
-      sentAt: DateTime.now(),
-      type: type,
-      targetAudience: targetAudience,
-      sentBy: sentBy,
-    );
+    await _db.from('broadcasts').insert({
+      'title': title,
+      'body': body,
+      'type': type.name,
+      'target_audience': targetAudience,
+      'sent_by': sentBy,
+    });
 
-    final current = await getNotifications();
-    current.insert(0, notification);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _notificationsKey,
-      current.map((n) => n.toJson()).toList(),
-    );
-
-    _broadcastController.add(notification);
+    // Real push to devices. Best effort: the in-app broadcast already exists.
+    try {
+      await _db.functions.invoke('send-push', body: {
+        'title': title,
+        'body': body,
+        'target': targetAudience,
+      });
+    } catch (e) {
+      debugPrint('[NotificationService] push not sent: $e');
+    }
   }
 
   Future<void> deleteNotification(String id) async {
-    final current = await getNotifications();
-    current.removeWhere((n) => n.id == id);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _notificationsKey,
-      current.map((n) => n.toJson()).toList(),
-    );
+    await _db.from('broadcasts').delete().eq('id', id);
   }
 
   Future<void> clearAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_notificationsKey);
+    await _db
+        .from('broadcasts')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
   }
 }

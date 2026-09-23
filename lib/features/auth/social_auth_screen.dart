@@ -177,8 +177,8 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                     ).animate(delay: 380.ms).fadeIn().slideY(begin: 0.3),
                     const SizedBox(height: 14),
                   ],
-                  // Demo Sign-In Option
-                  OutlinedButton(
+                  // Guest account: development builds only.
+                  if (kDebugMode) OutlinedButton(
                     onPressed: _inFlight != null
                         ? null
                         : () => _authenticate(_Provider.demo),
@@ -206,7 +206,7 @@ class _SocialAuthScreenState extends State<SocialAuthScreen> {
                               Icon(Icons.developer_mode_outlined, size: 20),
                               SizedBox(width: 10),
                               Text(
-                                'Explore with Demo Account',
+                                'Explore as Guest (debug)',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,

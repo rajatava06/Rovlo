@@ -15,9 +15,14 @@ dependencies:
   # State management
   provider: ^6.1.2
 
-  # Maps & Location
+  # Backend (Supabase: auth, database, storage, realtime, edge functions)
+  supabase_flutter: ^2.8.4
+
+  # Maps (OpenStreetMap-based, no API key required) & Location
+  flutter_map: ^8.2.1
+  latlong2: ^0.9.1
   geolocator: ^12.0.0
-  google_maps_flutter: ^2.6.1
+  geocoding: ^3.0.0
 
   # Persistence
   shared_preferences: ^2.2.3
@@ -31,14 +36,15 @@ dependencies:
   # Auth & Messaging
   google_sign_in: ^6.2.1
   firebase_core: ^3.12.1
-  firebase_auth: ^5.5.1
   firebase_messaging: ^15.2.4
   sign_in_with_apple: ^6.1.4
   crypto: ^3.0.6
   http: ^1.2.1
 
-  # Image Picking
+  # Image Picking / Networking / Links
   image_picker: ^1.1.2
+  cached_network_image: ^3.4.1
+  url_launcher: ^6.3.1
 
   # Utils
   intl: ^0.19.0
@@ -53,3 +59,4 @@ flutter:
   assets:
     - assets/videos/
     - assets/images/
+    - assets/config/

@@ -1,40 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/routing/app_router.dart';
+import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
+import 'core/widgets/keyboard_inset.dart';
+import 'core/widgets/rovlo_logo.dart';
 import 'providers/auth_provider.dart';
 
-/// Root widget: wires up the theme (reacting to [ThemeProvider]) and routing.
+/// Root widget: theme, routing, full-screen system bars and keyboard handling.
 ///
-/// If the user is already signed in (Firebase persisted session), the app
-/// skips the WelcomeScreen and lands directly on HomeScreen.
+/// While the saved session is being restored the app shows a cream splash;
+/// once it is known the app opens on Home (signed in) or Welcome (signed out).
 class RovloApp extends StatelessWidget {
   const RovloApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
-    final authProvider = context.watch<AuthProvider>();
+    final status = context.select<AuthProvider, AuthStatus>((a) => a.status);
 
-    // Determine initial route based on auth status
-    final String initialRoute;
-    switch (authProvider.status) {
-      case AuthStatus.signedIn:
-        initialRoute = Routes.home;
-        break;
-      case AuthStatus.signedOut:
-        initialRoute = Routes.welcome;
-        break;
-      case AuthStatus.unknown:
-        // Still loading — show welcome for now (will redirect once resolved)
-        initialRoute = Routes.welcome;
-        break;
-    }
+    final bool resolving = status == AuthStatus.unknown;
+    final String initialRoute =
+        status == AuthStatus.signedIn ? Routes.home : Routes.welcome;
 
     return MaterialApp(
+      // New key once the session is known so `initialRoute` is applied.
+      key: ValueKey<bool>(resolving),
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
@@ -42,8 +37,38 @@ class RovloApp extends StatelessWidget {
       themeMode: themeProvider.mode,
       themeAnimationDuration: const Duration(milliseconds: 350),
       themeAnimationCurve: Curves.easeInOut,
-      initialRoute: initialRoute,
-      onGenerateRoute: Routes.onGenerateRoute,
+      home: resolving ? const _Splash() : null,
+      initialRoute: resolving ? null : initialRoute,
+      onGenerateRoute: resolving ? null : Routes.onGenerateRoute,
+      builder: (context, child) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarContrastEnforced: false,
+          ),
+          child: KeyboardInsetScope(child: child ?? const SizedBox.shrink()),
+        );
+      },
+    );
+  }
+}
+
+class _Splash extends StatelessWidget {
+  const _Splash();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor:
+          isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      body: const Center(child: RovloLogo(fontSize: 44)),
     );
   }
 }

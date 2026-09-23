@@ -81,6 +81,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
+    // Navbar remains fixed (always visible) on Discover tab (index 2)
+    if (_index == 2) {
+      if (!_isNavVisible) {
+        setState(() => _isNavVisible = true);
+      }
+      return false;
+    }
+
     if (notification is UserScrollNotification) {
       if (notification.direction == ScrollDirection.reverse) {
         if (_isNavVisible) {
@@ -152,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Material(
                   elevation: 10,
                   borderRadius: BorderRadius.circular(16),
-                  color: isDark ? AppColors.darkCard : Colors.white,
+                  color: isDark ? AppColors.darkCard : AppColors.lightCard,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
@@ -229,7 +237,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: _IosOvalNavBar(
                     currentIndex: _index,
                     hasUnread: hasUnread,
-                    onTap: (i) => setState(() => _index = i),
+                    onTap: (i) => setState(() {
+                      _index = i;
+                      if (i == 2) _isNavVisible = true;
+                    }),
                   ),
                 ),
               ),
@@ -334,7 +345,7 @@ class _IosOvalNavBarState extends State<_IosOvalNavBar>
     // Translucent background with subtle blue tint
     final bgColor = isDark
         ? const Color(0xFF0A192F).withValues(alpha: 0.82)
-        : Colors.white.withValues(alpha: 0.82);
+        : AppColors.lightBackground.withValues(alpha: 0.88);
 
     final borderColor = isDark
         ? AppColors.primaryVibrantDark.withValues(alpha: 0.28)
@@ -508,57 +519,4 @@ class _NavItem {
   final String label;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hot Coming Soon placeholder
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _HotComingSoon extends StatelessWidget {
-  const _HotComingSoon();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryBlue =
-        isDark ? AppColors.primaryVibrantDark : AppColors.primary;
-
-    return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: primaryBlue.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.whatshot, color: primaryBlue, size: 64),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Hot Profiles',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Instant trending matches and hot explorer recommendations are coming soon!',
-                style: TextStyle(
-                  color: context.rovlo.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

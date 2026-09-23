@@ -15,23 +15,6 @@ class AppConstants {
   static const String termsUrl = 'https://rovlo.app/terms';
   static const String privacyUrl = 'https://rovlo.app/privacy';
 
-  // ---------------------------------------------------------------------------
-  // ADMIN ACCESS
-  // ---------------------------------------------------------------------------
-  /// Accounts whose email matches (case-insensitive) any entry here get access
-  /// to the Admin Panel. Change / add emails as needed — this is the single
-  /// place that controls admin rights.
-  static const List<String> adminEmails = <String>[
-    'rajatava2006@gmail.com',
-    'hellorovlo2026@gmail.com',
-  ];
-
-  static bool isAdminEmail(String? email) {
-    if (email == null) return false;
-    final normalized = email.trim().toLowerCase();
-    return adminEmails.map((e) => e.toLowerCase()).contains(normalized);
-  }
-
   // Gender options offered during profile setup.
   static const List<String> genderOptions = <String>[
     'Female',

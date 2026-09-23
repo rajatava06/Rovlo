@@ -89,11 +89,12 @@ class _OrbPainter extends CustomPainter {
       final dx = (o.x + 0.06 * cos(phase)) * size.width;
       final dy = (o.y + 0.06 * sin(phase)) * size.height;
       final radius = o.r * size.shortestSide;
+      // The radial gradient already fades to transparent — no blur filter
+      // needed (a full-screen blur every frame is very costly on weak GPUs).
       final paint = Paint()
         ..shader = RadialGradient(
           colors: [o.color, o.color.withValues(alpha: 0)],
-        ).createShader(Rect.fromCircle(center: Offset(dx, dy), radius: radius))
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
+        ).createShader(Rect.fromCircle(center: Offset(dx, dy), radius: radius));
       canvas.drawCircle(Offset(dx, dy), radius, paint);
     }
   }
