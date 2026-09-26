@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,7 +14,11 @@ import '../../providers/auth_provider.dart';
 import '../profile/verify_screen.dart';
 import '../profile/rovlo_plus_screen.dart';
 import '../profile/emergency_contacts_screen.dart';
+import '../profile/sos_screen.dart';
+import 'my_trips_section.dart';
 import 'saved_tab.dart';
+import '../settings/help_support_screen.dart';
+import '../settings/notifications_screen.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -56,7 +61,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 left: 24,
                 right: 24,
                 top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                bottom: KeyboardInset.of(context) + 24,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -185,19 +190,24 @@ class _ProfileTabState extends State<ProfileTab> {
                             photos.remove(selectedAvatar);
                             photos.insert(0, selectedAvatar);
                           }
-                          await provider.updateProfile(
-                            name: nameController.text,
-                            bio: bioController.text,
-                            photoUrl: selectedAvatar,
-                            profilePhotos: photos,
-                            homeBase: homeBaseController.text.trim().isNotEmpty
-                                ? homeBaseController.text.trim()
-                                : null,
-                          );
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          final messenger = ScaffoldMessenger.of(context);
+                          try {
+                            await provider.updateProfile(
+                              name: nameController.text,
+                              bio: bioController.text,
+                              photoUrl: selectedAvatar,
+                              profilePhotos: photos,
+                              homeBase: homeBaseController.text.trim().isNotEmpty
+                                  ? homeBaseController.text.trim()
+                                  : null,
+                            );
+                            if (context.mounted) Navigator.pop(context);
+                            messenger.showSnackBar(
                               const SnackBar(content: Text('Profile updated successfully!')),
+                            );
+                          } catch (_) {
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('Could not save your profile. Check your connection.')),
                             );
                           }
                         },
@@ -234,9 +244,10 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _triggerSOS(BuildContext context) {
+    final user = context.read<AuthProvider>().currentUser;
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(
@@ -250,31 +261,35 @@ class _ProfileTabState extends State<ProfileTab> {
             ],
           ),
           content: const Text(
-            'This will share your location with authorities and nearby travelers. Do you wish to trigger the SOS alert?',
+            'This starts a LOUD alarm, finds your exact location, and lets you call '
+            'the emergency number and text your location to your emergency contacts.\n\n'
+            'Use it only in a real emergency.',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Colors.red,
-                    content: Text(
-                      '🚨 Simulated Alert Sent! Location shared with emergency services.',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                Navigator.pop(dialogContext);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => SosScreen(
+                      userName: user?.displayName ?? '',
+                      contacts: user?.emergencyContacts ?? const [],
                     ),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
+                minimumSize: const Size(0, 44),
               ),
               child: const Text(
-                'TRIGGER SOS',
+                'START SOS',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
@@ -284,7 +299,18 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _handlePhotoAction(BuildContext context, AuthProvider provider, AppUser user, String action) async {
+  Future<void> _handlePhotoAction(BuildContext context, AuthProvider provider, AppUser user, String action) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _handlePhotoActionInner(context, provider, user, action);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not update your photos. Check your connection.')),
+      );
+    }
+  }
+
+  Future<void> _handlePhotoActionInner(BuildContext context, AuthProvider provider, AppUser user, String action) async {
     final ImagePicker picker = ImagePicker();
     
     if (action == 'gallery') {
@@ -328,7 +354,7 @@ class _ProfileTabState extends State<ProfileTab> {
       final pinned = photos.removeAt(_currentPhotoPage);
       photos.insert(0, pinned);
       
-      provider.updateProfile(
+      await provider.updateProfile(
         profilePhotos: photos,
         photoUrl: pinned,
       );
@@ -349,7 +375,7 @@ class _ProfileTabState extends State<ProfileTab> {
       photos.removeAt(_currentPhotoPage);
       final newPrimary = photos.isNotEmpty ? photos.first : '';
       
-      provider.updateProfile(
+      await provider.updateProfile(
         profilePhotos: photos,
         photoUrl: newPrimary.isNotEmpty ? newPrimary : null,
       );
@@ -723,6 +749,9 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
 
+          // Trips saved from Discover → Going to…
+          const MyTripsSection(),
+
           // About / Bio section
           const _SectionLabel('About Me'),
           const SizedBox(height: 10),
@@ -838,7 +867,10 @@ class _ProfileTabState extends State<ProfileTab> {
             icon: Icons.star_rounded,
             label: 'Rovlo Plus',
             highlight: true,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RovloPlusScreen())),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RovloPlusScreen()),
+            ),
           ),
           _MenuTile(
             icon: Icons.contact_phone_outlined,
@@ -853,12 +885,12 @@ class _ProfileTabState extends State<ProfileTab> {
           _MenuTile(
             icon: Icons.notifications_none,
             label: 'Notifications',
-            onTap: () => _soon(context),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
           ),
           _MenuTile(
             icon: Icons.help_outline,
             label: 'Help & support',
-            onTap: () => _soon(context),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpSupportScreen())),
           ),
 
           if (provider.isAdmin) ...[
@@ -935,12 +967,6 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _soon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Coming soon')),
-    );
-  }
-
   Future<void> _confirmSignOut(BuildContext context, AuthProvider provider) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -985,10 +1011,18 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
     if (confirm != true) return;
-    await provider.signOut();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await provider.deleteAccount();
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not delete your account. Check your connection and try again.')),
+      );
+      return;
+    }
     if (!context.mounted) return;
     Navigator.pushNamedAndRemoveUntil(context, Routes.welcome, (r) => false);
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       const SnackBar(content: Text('Your account has been deleted.')),
     );
   }

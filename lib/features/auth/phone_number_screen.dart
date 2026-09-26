@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -39,7 +40,21 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
 
   String get _fullNumber => '$_dialCode ${_phoneController.text.trim()}';
 
+  /// No SMS provider: save the number (unverified) and go straight on.
+  void _continueWithoutOtp() {
+    context.read<AuthProvider>().pendingPhoneNumber = _fullNumber;
+    Navigator.pushReplacementNamed(
+      context,
+      Routes.socialAuth,
+      arguments: const SocialAuthArgs(isSignIn: false),
+    );
+  }
+
   Future<void> _sendOtp() async {
+    if (!AppConstants.phoneOtpEnabled) {
+      _continueWithoutOtp();
+      return;
+    }
     final auth = context.read<AuthProvider>();
     await auth.requestOtp(_fullNumber);
     if (!mounted) return;
@@ -63,7 +78,7 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
         arguments: const SocialAuthArgs(isSignIn: false),
       );
     } else {
-      setState(() => _error = 'Incorrect code. Try 123456 in demo mode.');
+      setState(() => _error = 'Incorrect code. Please try again.');
     }
   }
 
@@ -77,12 +92,14 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
         step: 1,
         totalSteps: 7,
         title: "What's your number?",
-        subtitle:
-            "We'll text you a code to verify it's really you. Standard rates "
-            'may apply.',
+        subtitle: AppConstants.phoneOtpEnabled
+            ? "We'll text you a code to verify it's really you. Standard rates "
+                'may apply.'
+            : 'Add your phone number to set up your account. It is never shown '
+                'to other travellers.',
         continueEnabled: _phoneValid,
         busy: auth.busy,
-        continueLabel: 'Send code',
+        continueLabel: AppConstants.phoneOtpEnabled ? 'Send code' : 'Continue',
         onContinue: _sendOtp,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,7 +110,8 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
               onDialCodeChanged: (code) => setState(() => _dialCode = code),
               onChanged: () => setState(() {}),
             ),
-            const SizedBox(height: 14),
+            if (AppConstants.phoneOtpEnabled) const SizedBox(height: 14),
+            if (AppConstants.phoneOtpEnabled)
             Row(
               children: [
                 Text(
@@ -185,7 +203,7 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Demo mode: use code 123456',
+                    'Enter the 6-digit code we texted you.',
                     style: TextStyle(
                         color: context.rovlo.textSecondary, fontSize: 13),
                   ),

@@ -2,155 +2,110 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
-import '../main.dart' show firebaseInitialized;
+import '../core/backend/backend.dart';
+import '../core/config/env.dart';
 import '../models/app_user.dart';
 import 'user_repository.dart';
 
 /// Result of a social sign-in attempt.
 class SocialAuthResult {
   const SocialAuthResult({
+    required this.userId,
     required this.email,
     required this.name,
     this.photoUrl,
-    this.firebaseUid,
   });
-  final String email;
+  final String userId;
+  final String? email;
   final String? name;
   final String? photoUrl;
-  final String? firebaseUid;
 }
 
-/// Handles authentication for Rovlo using Firebase Auth.
+/// Authentication through Supabase Auth.
 ///
-/// ─────────────────────────────────────────────────────────────────────────
-/// Google Sign-In: Uses `google_sign_in` to get idToken/accessToken, then
-///   signs into Firebase with GoogleAuthProvider.credential().
-///
-/// Apple Sign-In: Uses `sign_in_with_apple` to get identityToken, then
-///   signs into Firebase with OAuthProvider('apple.com').credential().
-///
-/// Persistent Session: Firebase Auth automatically persists the user's
-///   authentication state. On app restart, `FirebaseAuth.instance.currentUser`
-///   returns the signed-in user without re-authentication.
-/// ─────────────────────────────────────────────────────────────────────────
+/// Google: the native account picker (`google_sign_in`) returns an ID token
+///   which is exchanged for a Supabase session with `signInWithIdToken`.
+/// Apple: same idea with `sign_in_with_apple` + a hashed nonce.
+/// Sessions are stored and refreshed automatically by `supabase_flutter`, so
+///   users stay signed in across app restarts.
 class AuthService {
   AuthService(this._users);
 
   final UserRepository _users;
-  final Random _random = Random();
 
-  FirebaseAuth? get _firebaseAuth =>
-      firebaseInitialized ? FirebaseAuth.instance : null;
+  sb.SupabaseClient get _sb => Backend.client;
 
-  static const String _webClientId =
-      '593111392034-iiukhf2sj66e6kos1i2fkpmsdmjc5mp5.apps.googleusercontent.com';
-
-  /// Google Sign-In instance. On Web, it requires clientId. On Android,
-  /// serverClientId ensures Google issues an idToken compatible with Firebase Auth.
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: kIsWeb ? _webClientId : null,
-    serverClientId: _webClientId,
-    scopes: ['email', 'profile'],
+    clientId: kIsWeb ? Env.googleWebClientId : null,
+    serverClientId: Env.googleWebClientId,
+    scopes: const ['email', 'profile'],
   );
 
-  /// Returns the currently signed-in Firebase user, or null.
-  User? get firebaseCurrentUser => _firebaseAuth?.currentUser;
+  sb.User? get currentAuthUser => Backend.ready ? _sb.auth.currentUser : null;
 
-  /// Stream of auth state changes (sign-in / sign-out events).
-  Stream<User?> get authStateChanges =>
-      _firebaseAuth?.authStateChanges() ?? const Stream<User?>.empty();
+  Stream<sb.AuthState> get authStateChanges =>
+      Backend.ready ? _sb.auth.onAuthStateChange : const Stream<sb.AuthState>.empty();
 
   // ---------------------------------------------------------------------------
-  // Phone
+  // Phone (verification UI only — see README: wire an SMS provider before launch)
   // ---------------------------------------------------------------------------
 
-  /// Requests an OTP for [phoneNumber]. In demo mode this always "sends" and
-  /// the accepted code is `123456`.
+  /// Requests an OTP for [phoneNumber]. Demo mode: accepted code is `123456`.
   Future<void> requestPhoneOtp(String phoneNumber) async {
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    // Real impl: FirebaseAuth.instance.verifyPhoneNumber(...)
   }
 
-  /// Verifies the OTP. Demo mode accepts `123456`.
   Future<bool> verifyPhoneOtp(String phoneNumber, String code) async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     return code.trim() == '123456';
   }
 
   // ---------------------------------------------------------------------------
-  // Google Sign-In (Firebase Auth)
+  // Google
   // ---------------------------------------------------------------------------
 
-  /// Triggers the native Google account picker, obtains idToken + accessToken,
-  /// then signs into Firebase with GoogleAuthProvider.credential().
-  ///
-  /// Returns `null` if the user cancels the picker.
+  /// Returns `null` if the user closes the account picker.
   Future<SocialAuthResult?> signInWithGoogle() async {
-    try {
-      // Clear previous cached session so native device account picker is always shown
-      await _googleSignIn.signOut().catchError((_) => null);
+    // Forget the previous account so the picker always appears.
+    await _googleSignIn.signOut().catchError((_) => null);
 
-      // Open native device Google Account picker
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+    final account = await _googleSignIn.signIn();
+    if (account == null) return null;
 
-      if (account == null) {
-        // User cancelled or closed the device account picker
-        return null;
-      }
-
-      // Obtain the auth details from the Google Sign-In
-      final GoogleSignInAuthentication googleAuth =
-          await account.authentication;
-
-      // Create a Firebase credential from the Google tokens
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
+    if (idToken == null) {
+      throw const sb.AuthException(
+        'Google did not return an ID token. Check GOOGLE_WEB_CLIENT_ID and the '
+        'Android SHA-1 fingerprint in Google Cloud.',
       );
-
-      if (_firebaseAuth != null) {
-        // Sign in to Firebase with the Google credential
-        final UserCredential userCredential =
-            await _firebaseAuth!.signInWithCredential(credential);
-
-        final User? firebaseUser = userCredential.user;
-        if (firebaseUser == null) return null;
-
-        return SocialAuthResult(
-          email: firebaseUser.email ?? account.email,
-          name: firebaseUser.displayName ??
-              account.displayName ??
-              account.email.split('@').first,
-          photoUrl: firebaseUser.photoURL ??
-              account.photoUrl ??
-              'https://api.dicebear.com/7.x/avataaars/png?seed=${account.email}',
-          firebaseUid: firebaseUser.uid,
-        );
-      } else {
-        // Fallback when Firebase is not initialized
-        return SocialAuthResult(
-          email: account.email,
-          name: account.displayName ?? account.email.split('@').first,
-          photoUrl: account.photoUrl ??
-              'https://api.dicebear.com/7.x/avataaars/png?seed=${account.email}',
-          firebaseUid: 'local_${account.id}',
-        );
-      }
-    } catch (e) {
-      rethrow;
     }
+
+    final res = await _sb.auth.signInWithIdToken(
+      provider: sb.OAuthProvider.google,
+      idToken: idToken,
+      accessToken: auth.accessToken,
+    );
+    final user = res.user;
+    if (user == null) return null;
+
+    return SocialAuthResult(
+      userId: user.id,
+      email: user.email ?? account.email,
+      name: account.displayName ?? account.email.split('@').first,
+      photoUrl: account.photoUrl,
+    );
   }
 
   // ---------------------------------------------------------------------------
-  // Apple Sign-In (Firebase Auth)
+  // Apple
   // ---------------------------------------------------------------------------
 
-  /// Generates a cryptographically secure random nonce for Apple Sign-In.
   String _generateNonce([int length = 32]) {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
@@ -159,121 +114,112 @@ class AuthService {
         .join();
   }
 
-  /// Returns the SHA-256 hash of [input].
-  String _sha256ofString(String input) {
-    final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+  String _sha256ofString(String input) =>
+      sha256.convert(utf8.encode(input)).toString();
 
-  /// Triggers native Apple Sign-In, then signs into Firebase with the
-  /// Apple credential.
-  ///
   /// Returns `null` if the user cancels.
   Future<SocialAuthResult?> signInWithApple() async {
+    final rawNonce = _generateNonce();
     try {
-      // Generate a nonce for security
-      final rawNonce = _generateNonce();
-      final nonce = _sha256ofString(rawNonce);
-
-      // Request Apple Sign-In credential
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
+      final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
-        nonce: nonce,
+        nonce: _sha256ofString(rawNonce),
       );
 
-      if (_firebaseAuth != null) {
-        // Create an OAuthCredential for Firebase
-        final oauthCredential = OAuthProvider('apple.com').credential(
-          idToken: appleCredential.identityToken,
-          rawNonce: rawNonce,
-        );
-
-        // Sign in to Firebase
-        final UserCredential userCredential =
-            await _firebaseAuth!.signInWithCredential(oauthCredential);
-
-        final User? firebaseUser = userCredential.user;
-        if (firebaseUser == null) return null;
-
-        // Apple only sends name on first sign-in; use Firebase's cached version
-        final String? displayName = appleCredential.givenName != null
-            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
-                .trim()
-            : firebaseUser.displayName;
-
-        return SocialAuthResult(
-          email: firebaseUser.email ??
-              appleCredential.email ??
-              '${firebaseUser.uid}@privaterelay.appleid.com',
-          name: displayName ?? firebaseUser.email?.split('@').first,
-          photoUrl: firebaseUser.photoURL,
-          firebaseUid: firebaseUser.uid,
-        );
-      } else {
-        final String? displayName = appleCredential.givenName != null
-            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'
-                .trim()
-            : null;
-        return SocialAuthResult(
-          email: appleCredential.email ?? 'apple.user@rovlo.app',
-          name: displayName ?? 'Apple User',
-          firebaseUid: 'local_apple_${DateTime.now().millisecondsSinceEpoch}',
-        );
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        throw const sb.AuthException('Apple did not return an identity token.');
       }
+
+      final res = await _sb.auth.signInWithIdToken(
+        provider: sb.OAuthProvider.apple,
+        idToken: idToken,
+        nonce: rawNonce,
+      );
+      final user = res.user;
+      if (user == null) return null;
+
+      // Apple only sends the name on the very first sign-in.
+      final fullName = [credential.givenName, credential.familyName]
+          .whereType<String>()
+          .join(' ')
+          .trim();
+
+      return SocialAuthResult(
+        userId: user.id,
+        email: user.email ?? credential.email,
+        name: fullName.isNotEmpty ? fullName : null,
+      );
     } on SignInWithAppleAuthorizationException catch (e) {
-      if (e.code == AuthorizationErrorCode.canceled) {
-        return null; // User cancelled
-      }
-      rethrow;
-    } catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) return null;
       rethrow;
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Sign Out
+  // Debug-only guest account (needs "Anonymous sign-ins" enabled in Supabase)
   // ---------------------------------------------------------------------------
 
-  /// Signs out from Firebase and Google.
+  Future<SocialAuthResult?> signInAnonymously() async {
+    final res = await _sb.auth.signInAnonymously();
+    final user = res.user;
+    if (user == null) return null;
+    return SocialAuthResult(
+      userId: user.id,
+      email: null,
+      name: 'Demo Traveler',
+      photoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Demo',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sign out
+  // ---------------------------------------------------------------------------
+
   Future<void> signOut() async {
     await _googleSignIn.signOut().catchError((_) => null);
-    if (_firebaseAuth != null) {
-      await _firebaseAuth!.signOut();
-    }
+    if (Backend.ready) await _sb.auth.signOut();
   }
 
   // ---------------------------------------------------------------------------
-  // Account resolution
+  // Profile resolution
   // ---------------------------------------------------------------------------
 
-  /// Returns an existing account for [email] or creates a fresh one, persisting
-  /// it in the repository. Used by both the sign-in and create-account flows.
-  Future<AppUser> resolveOrCreate({
-    required String email,
+  /// Returns the profile row of the signed-in user. The row is normally created
+  /// by a database trigger the moment the account is created; if it is missing
+  /// (very rare) it is created here. Missing fields are filled from the social
+  /// account, but details the user already edited are never overwritten.
+  Future<AppUser> resolveProfile({
+    required String userId,
+    String? email,
     String? name,
     String? phoneNumber,
     required AuthMethod method,
     String? photoUrl,
-    String? firebaseUid,
   }) async {
-    final existing = await _users.findByEmail(email);
+    final existing = await _users.findById(userId);
     if (existing != null) {
-      // Merge any new signal (e.g. phone captured before social login).
+      final hasName = existing.name != null && existing.name!.trim().isNotEmpty;
+      final hasPhoto = existing.photoUrl != null && existing.photoUrl!.isNotEmpty;
       final merged = existing.copyWith(
-        name: name ?? existing.name,
-        phoneNumber: phoneNumber ?? existing.phoneNumber,
-        photoUrl: photoUrl ?? existing.photoUrl,
+        name: hasName ? null : name,
+        phoneNumber: phoneNumber,
+        photoUrl: hasPhoto ? null : photoUrl,
+        email: (existing.email == null || existing.email!.isEmpty) ? email : null,
       );
-      await _users.upsert(merged);
+      final changed = merged.name != existing.name ||
+          merged.phoneNumber != existing.phoneNumber ||
+          merged.photoUrl != existing.photoUrl ||
+          merged.email != existing.email;
+      if (changed) await _users.upsert(merged);
       return merged;
     }
+
     final user = AppUser(
-      id: firebaseUid ??
-          'usr_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(9999)}',
+      id: userId,
       createdAt: DateTime.now(),
       email: email,
       name: name,
@@ -286,4 +232,10 @@ class AuthService {
   }
 
   Future<void> updateUser(AppUser user) => _users.upsert(user);
+
+  /// Deletes the signed-in account and all its data (database function).
+  Future<void> deleteMyAccount() async {
+    await _sb.rpc('delete_my_account');
+    await signOut();
+  }
 }

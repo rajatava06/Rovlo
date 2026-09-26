@@ -45,5 +45,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Rovlo uses your location to show travellers near you and on the map.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Rovlo needs photo access so you can add pictures to your profile and chats.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Rovlo needs the camera so you can take profile and verification photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Rovlo uses the microphone so you can dictate chat messages by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Rovlo converts your voice to text (English or Hindi) so you can type messages by speaking.</string>
 </dict>
 </plist>

@@ -1,114 +1,97 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/backend/backend.dart';
 import '../models/app_user.dart';
 
-/// Stores the roster of Rovlo users.
+/// Reads and writes user profiles in Supabase (`public.profiles`).
 ///
-/// This local implementation (backed by [SharedPreferences]) keeps the app
-/// fully functional and launchable with no backend. Swap the read/write bodies
-/// for Firestore / a REST API when you connect a real backend — the rest of the
-/// app talks only to this interface.
+/// What each caller may do is enforced by Row Level Security in the database:
+/// normal users can only touch their own row, admins can see / block / delete
+/// everyone. This class is only a convenient, typed doorway.
 class UserRepository {
-  static const String _usersKey = 'rovlo_users';
+  SupabaseClient get _db => Backend.client;
 
-  Future<List<AppUser>> getAllUsers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_usersKey) ?? const <String>[];
-    final users = raw
-        .map((s) {
-          try {
-            return AppUser.fromJson(s);
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<AppUser>()
-        .toList();
-    users.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return users;
-  }
-
-  Future<void> _saveAll(List<AppUser> users) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _usersKey,
-      users.map((u) => u.toJson()).toList(),
-    );
-  }
+  // ── Reads ───────────────────────────────────────────────────────────────────
 
   Future<AppUser?> findById(String id) async {
-    final users = await getAllUsers();
-    for (final u in users) {
-      if (u.id == id) return u;
-    }
-    return null;
+    final row = await _db.from('profiles').select().eq('id', id).maybeSingle();
+    return row == null ? null : AppUser.fromRow(row);
   }
 
-  Future<AppUser?> findByEmail(String email) async {
-    final normalized = email.trim().toLowerCase();
-    final users = await getAllUsers();
-    for (final u in users) {
-      if ((u.email ?? '').toLowerCase() == normalized) return u;
-    }
-    return null;
+  /// Admin only (RLS returns just your own row for everyone else).
+  Future<List<AppUser>> getAllUsers() async {
+    final rows = await _db
+        .from('profiles')
+        .select()
+        .order('created_at', ascending: false)
+        .limit(1000);
+    return rows.map<AppUser>(AppUser.fromRow).toList();
   }
 
-  Future<AppUser?> findByPhone(String phone) async {
-    final users = await getAllUsers();
-    for (final u in users) {
-      if (u.phoneNumber == phone) return u;
-    }
-    return null;
-  }
+  // ── Writes (own profile) ────────────────────────────────────────────────────
 
-  /// Inserts or updates a user (matched by id).
+  /// Inserts or updates the signed-in user's own profile.
   Future<void> upsert(AppUser user) async {
-    final users = await getAllUsers();
-    final index = users.indexWhere((u) => u.id == user.id);
-    if (index >= 0) {
-      users[index] = user;
-    } else {
-      users.add(user);
-    }
-    await _saveAll(users);
+    await _db.from('profiles').upsert(user.toRow());
   }
 
+  Future<void> patch(String id, Map<String, dynamic> values) async {
+    await _db.from('profiles').update(values).eq('id', id);
+  }
+
+  Future<void> updateLocation(
+    String id, {
+    required double lat,
+    required double lng,
+    String? city,
+  }) =>
+      patch(id, {
+        'lat': lat,
+        'lng': lng,
+        if (city != null && city.isNotEmpty) 'city': city,
+        'location_updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  Future<void> setFcmToken(String id, String? token) =>
+      patch(id, {'fcm_token': token});
+
+  // ── Admin actions ───────────────────────────────────────────────────────────
+
+  Future<void> setBlocked(String id, bool blocked) =>
+      patch(id, {'is_blocked': blocked});
+
+  /// Removes the account completely (auth user + profile + all its data).
   Future<void> delete(String id) async {
-    final users = await getAllUsers();
-    users.removeWhere((u) => u.id == id);
-    await _saveAll(users);
+    await _db.rpc('admin_delete_user', params: {'p_user': id});
   }
 
-  Future<void> setBlocked(String id, bool blocked) async {
-    final user = await findById(id);
-    if (user == null) return;
-    await upsert(user.copyWith(isBlocked: blocked));
+  Future<Set<String>> adminEmails() async {
+    try {
+      final rows = await _db.from('admin_emails').select('email');
+      return rows.map<String>((r) => (r['email'] as String).toLowerCase()).toSet();
+    } catch (_) {
+      return <String>{};
+    }
   }
 
-  /// Convenience for the admin dashboard.
+  Future<bool> isAdmin() async {
+    try {
+      final res = await _db.rpc('is_admin');
+      return res == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, int>> stats() async {
-    final users = await getAllUsers();
-    final now = DateTime.now();
-    final newToday = users
-        .where((u) => now.difference(u.createdAt).inDays == 0)
-        .length;
-    final active = users.where((u) => !u.isBlocked && !u.isPaused).length;
-    final blocked = users.where((u) => u.isBlocked).length;
-    final verified = users.where((u) => u.isVerified).length;
-    final complete = users.where((u) => u.profileComplete).length;
-    return {
-      'total': users.length,
-      'active': active,
-      'blocked': blocked,
-      'verified': verified,
-      'complete': complete,
-      'newToday': newToday,
-    };
+    final res = await _db.rpc('admin_stats');
+    final map = Map<String, dynamic>.from(res as Map);
+    return map.map((k, v) => MapEntry(k, (v as num).toInt()));
   }
 
-  /// Export the whole roster as pretty JSON (used by the admin panel).
+  /// Whole roster as pretty JSON (used by the admin panel's export button).
   Future<String> exportJson() async {
     final users = await getAllUsers();
     return const JsonEncoder.withIndent('  ')

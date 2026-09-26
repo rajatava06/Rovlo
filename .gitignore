@@ -39,9 +39,11 @@ ios/Runner/GoogleService-Info.plist
 
 # Web
 web/
-lib/generated_plugin_registrant.dart
 
 # Env / secrets
 .env
 .env.local
 .env.*.local
+
+# Local app configuration (bundled into the app at build time, never committed)
+assets/config/app_config.json

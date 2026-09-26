@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/constants/app_constants.dart';
+import '../../core/widgets/keyboard_inset.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/admin_notification.dart';
@@ -12,9 +12,10 @@ import '../../models/app_user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_repository.dart';
+import 'support_inbox.dart';
+import 'verification_queue.dart';
 
-/// Admin Panel — Restricted to authorized admin accounts
-/// (e.g. rajatava2006@gmail.com and hellorovlo2026@gmail.com).
+/// Admin Panel — restricted to accounts listed in the `admin_emails` table.
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -27,8 +28,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   late final UserRepository _repo;
   late final NotificationService _notificationService;
   late final TabController _tabController;
+  bool _hasSupport = false;
 
   List<AppUser> _users = [];
+  Set<String> _adminEmails = <String>{};
+  String? _loadError;
   List<AdminNotification> _notifications = [];
   Map<String, int> _stats = const {};
   String _query = '';
@@ -45,7 +49,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _hasSupport = context.read<AuthProvider>().isSupportAgent;
+    // Roster, Push, Verification (+ Support for agents)
+    _tabController = TabController(length: _hasSupport ? 4 : 3, vsync: this);
     _repo = context.read<AuthProvider>().users;
     _notificationService = NotificationService();
     _load();
@@ -60,18 +66,32 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final users = await _repo.getAllUsers();
-    final stats = await _repo.stats();
-    final notifications = await _notificationService.getNotifications();
-
-    if (!mounted) return;
     setState(() {
-      _users = users;
-      _stats = stats;
-      _notifications = notifications;
-      _loading = false;
+      _loading = true;
+      _loadError = null;
     });
+    try {
+      final users = await _repo.getAllUsers();
+      final stats = await _repo.stats();
+      final notifications = await _notificationService.getNotifications();
+      final admins = await _repo.adminEmails();
+
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        _stats = stats;
+        _notifications = notifications;
+        _adminEmails = admins;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = 'Could not load admin data. Check your connection and that '
+            'your email is listed in admin_emails.\n($e)';
+        _loading = false;
+      });
+    }
   }
 
   List<AppUser> get _filteredUsers {
@@ -121,24 +141,45 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: _hasSupport,
           indicatorColor: primaryPeach,
           labelColor: primaryPeach,
           unselectedLabelColor: isDark ? Colors.white70 : AppColors.lightTextSecondary,
-          tabs: const [
-            Tab(icon: Icon(Icons.people_alt_outlined), text: 'User Roster'),
-            Tab(icon: Icon(Icons.notifications_active_outlined), text: 'Push Notification'),
+          tabs: [
+            const Tab(icon: Icon(Icons.people_alt_outlined), text: 'User Roster'),
+            const Tab(icon: Icon(Icons.notifications_active_outlined), text: 'Push Notification'),
+            const Tab(icon: Icon(Icons.verified_user_outlined), text: 'Verification'),
+            if (_hasSupport) const Tab(icon: Icon(Icons.support_agent), text: 'Support'),
           ],
         ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildUserRosterTab(context, primaryPeach),
-                _buildPushNotificationTab(context, primaryPeach),
-              ],
-            ),
+          : _loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_loadError!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        OutlinedButton(onPressed: _load, child: const Text('Retry')),
+                      ],
+                    ),
+                  ),
+                )
+              : KeyboardAvoiding(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildUserRosterTab(context, primaryPeach),
+                      _buildPushNotificationTab(context, primaryPeach),
+                      const VerificationQueue(),
+                      if (_hasSupport) const SupportInbox(),
+                    ],
+                  ),
+                ),
     );
   }
 
@@ -216,6 +257,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             for (var i = 0; i < _filteredUsers.length; i++)
               _UserTile(
                 user: _filteredUsers[i],
+                isAdminUser: _adminEmails.contains((_filteredUsers[i].email ?? '').toLowerCase()),
                 onChanged: _load,
                 repo: _repo,
               ).animate(delay: (35 * i).ms).fadeIn().slideX(begin: 0.05),
@@ -274,7 +316,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Send in-app broadcast alerts directly to all registered app users.',
+                  'Sends an in-app broadcast to all users, plus a push notification to devices that allowed them.',
                   style: TextStyle(
                     color: isDark ? Colors.white70 : AppColors.lightTextSecondary,
                     fontSize: 13,
@@ -494,13 +536,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
     final adminEmail = context.read<AuthProvider>().currentUser?.email ?? 'Admin';
 
-    await _notificationService.sendNotification(
-      title: title,
-      body: body,
-      type: _selectedType,
-      targetAudience: _selectedTarget,
-      sentBy: adminEmail,
-    );
+    try {
+      await _notificationService.sendNotification(
+        title: title,
+        body: body,
+        type: _selectedType,
+        targetAudience: _selectedTarget,
+        sentBy: adminEmail,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sendingNotification = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not send: $e')),
+      );
+      return;
+    }
 
     _titleController.clear();
     _bodyController.clear();
@@ -641,18 +692,20 @@ class _StatsGrid extends StatelessWidget {
 class _UserTile extends StatelessWidget {
   const _UserTile({
     required this.user,
+    required this.isAdminUser,
     required this.onChanged,
     required this.repo,
   });
 
   final AppUser user;
+  final bool isAdminUser;
   final VoidCallback onChanged;
   final UserRepository repo;
 
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('d MMM yyyy');
-    final isAdmin = AppConstants.isAdminEmail(user.email);
+    final isAdmin = isAdminUser;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

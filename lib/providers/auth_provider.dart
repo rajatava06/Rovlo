@@ -1,35 +1,38 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
-import '../core/constants/app_constants.dart';
+import '../core/backend/backend.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
+import '../services/media_service.dart';
+import '../services/notification_service.dart';
+import '../services/push_notification_service.dart';
+import '../services/support_service.dart';
 import '../services/user_repository.dart';
 
 enum AuthStatus { unknown, signedOut, signedIn }
 
-/// Central session state: who is signed in, plus the in-progress onboarding
-/// draft used while a new user completes their profile.
+/// Central session state: who is signed in and their profile.
 ///
-/// Session persistence is handled by Firebase Auth — the user stays logged in
-/// across app restarts until they explicitly sign out.
+/// The session itself lives in Supabase Auth (persisted + auto-refreshed), the
+/// profile lives in the `profiles` table. A copy of the last profile is cached
+/// on the device only so the app can still open when the phone is offline.
 class AuthProvider extends ChangeNotifier {
   AuthProvider({AuthService? authService, UserRepository? userRepository})
       : _users = userRepository ?? UserRepository() {
     _auth = authService ?? AuthService(_users);
-    _restore();
-    // Listen to Firebase auth state changes reactively
-    _authSub = _auth.authStateChanges.listen(_onFirebaseAuthStateChanged);
+    _init();
   }
 
-  static const String _sessionKey = 'rovlo_current_user_id';
+  static const String _cacheKey = 'rovlo_cached_profile';
 
   final UserRepository _users;
   late final AuthService _auth;
-  StreamSubscription<fb.User?>? _authSub;
+  StreamSubscription<sb.AuthState>? _authSub;
 
   AuthService get auth => _auth;
   UserRepository get users => _users;
@@ -40,9 +43,19 @@ class AuthProvider extends ChangeNotifier {
   AppUser? _currentUser;
   AppUser? get currentUser => _currentUser;
 
-  bool get isAdmin => AppConstants.isAdminEmail(_currentUser?.email);
+  bool _isAdmin = false;
+  bool _isSupportAgent = false;
 
-  // A pending phone number captured before social auth during account creation.
+  /// True for accounts listed in the `support_agents` table (they get the
+  /// support inbox). Decided by the database.
+  bool get isSupportAgent => _isSupportAgent;
+
+  /// Decided by the database (`is_admin()`), not by anything in the app.
+  /// It only controls what the UI shows — the real protection is Row Level
+  /// Security, which rejects admin actions from non-admins anyway.
+  bool get isAdmin => _isAdmin;
+
+  /// A pending phone number captured before social auth during account creation.
   String? pendingPhoneNumber;
 
   bool _busy = false;
@@ -53,87 +66,125 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Called by Firebase auth state listener when auth state changes.
-  void _onFirebaseAuthStateChanged(fb.User? firebaseUser) {
-    if (firebaseUser == null && _status == AuthStatus.signedIn) {
-      // Firebase session expired or user signed out externally
-      _currentUser = null;
+  // ---------------------------------------------------------------------------
+  // Start-up / session restore
+  // ---------------------------------------------------------------------------
+
+  Future<void> _init() async {
+    if (!Backend.ready) {
       _status = AuthStatus.signedOut;
-      _persistSession(null);
+      notifyListeners();
+      return;
+    }
+    _authSub = _auth.authStateChanges.listen(_onAuthEvent);
+    await _restore();
+  }
+
+  void _onAuthEvent(sb.AuthState state) {
+    if (state.event == sb.AuthChangeEvent.signedOut &&
+        _status == AuthStatus.signedIn) {
+      // Session expired / revoked / signed out elsewhere.
+      _clear();
+    }
+  }
+
+  Future<void> _restore() async {
+    final authUser = _auth.currentAuthUser;
+    if (authUser == null) {
+      _status = AuthStatus.signedOut;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      var user = await _users.findById(authUser.id);
+      user ??= await _auth.resolveProfile(
+        userId: authUser.id,
+        email: authUser.email,
+        name: authUser.userMetadata?['full_name'] as String? ??
+            authUser.userMetadata?['name'] as String?,
+        method: AuthMethod.google,
+        photoUrl: authUser.userMetadata?['avatar_url'] as String?,
+      );
+
+      if (user.isBlocked) {
+        await _auth.signOut();
+        _clear();
+        return;
+      }
+      await _commit(user);
+    } catch (e) {
+      debugPrint('[AuthProvider] restore failed (offline?): $e');
+      final cached = await _readCache(authUser.id);
+      if (cached != null && !cached.isBlocked) {
+        _currentUser = cached;
+        _status = AuthStatus.signedIn;
+      } else {
+        _status = AuthStatus.signedOut;
+      }
       notifyListeners();
     }
   }
 
-  /// Restore session: first check Firebase Auth for a persistent login,
-  /// then fall back to SharedPreferences for the AppUser profile data.
-  Future<void> _restore() async {
-    // Check if Firebase has a persisted user session
-    final fb.User? firebaseUser = _auth.firebaseCurrentUser;
+  // ---------------------------------------------------------------------------
+  // Local offline cache
+  // ---------------------------------------------------------------------------
 
-    if (firebaseUser != null) {
-      // Firebase user is still authenticated — restore their AppUser profile
-      // Try to find by email first (most reliable)
-      AppUser? user;
-      if (firebaseUser.email != null) {
-        user = await _users.findByEmail(firebaseUser.email!);
-      }
-      // Fallback: try by Firebase UID
-      user ??= await _users.findById(firebaseUser.uid);
-
-      if (user != null && !user.isBlocked) {
-        _currentUser = user;
-        _status = AuthStatus.signedIn;
-        notifyListeners();
-        return;
-      }
-
-      // Firebase user exists but no local profile — might be a fresh install
-      // with a previously authenticated account. Create a minimal profile.
+  Future<void> _writeCache(AppUser? user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
       if (user == null) {
-        final newUser = await _auth.resolveOrCreate(
-          email: firebaseUser.email ?? '${firebaseUser.uid}@rovlo.app',
-          name: firebaseUser.displayName,
-          method: AuthMethod.google,
-          photoUrl: firebaseUser.photoURL,
-          firebaseUid: firebaseUser.uid,
+        await prefs.remove(_cacheKey);
+      } else {
+        await prefs.setString(
+          _cacheKey,
+          jsonEncode({
+            ...user.toRow(),
+            'created_at': user.createdAt.toIso8601String(),
+            'is_blocked': user.isBlocked,
+          }),
         );
-        _currentUser = newUser;
-        _status = AuthStatus.signedIn;
-        await _persistSession(newUser);
-        notifyListeners();
-        return;
       }
-    }
-
-    // Fallback: check SharedPreferences for legacy session
-    final prefs = await SharedPreferences.getInstance();
-    final id = prefs.getString(_sessionKey);
-    if (id != null) {
-      final user = await _users.findById(id);
-      if (user != null && !user.isBlocked) {
-        _currentUser = user;
-        _status = AuthStatus.signedIn;
-        notifyListeners();
-        return;
-      }
-    }
-    _status = AuthStatus.signedOut;
-    notifyListeners();
+    } catch (_) {}
   }
 
-  Future<void> _persistSession(AppUser? user) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (user == null) {
-      await prefs.remove(_sessionKey);
-    } else {
-      await prefs.setString(_sessionKey, user.id);
+  Future<AppUser?> _readCache(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null) return null;
+      final user = AppUser.fromRow(jsonDecode(raw) as Map<String, dynamic>);
+      return user.id == userId ? user : null;
+    } catch (_) {
+      return null;
     }
   }
 
-  void _commit(AppUser user) {
+  // ---------------------------------------------------------------------------
+  // Commit / clear
+  // ---------------------------------------------------------------------------
+
+  Future<void> _commit(AppUser user) async {
+    _isAdmin = await _users.isAdmin();
+    _isSupportAgent = await SupportService.instance.isAgent();
     _currentUser = user;
     _status = AuthStatus.signedIn;
-    _persistSession(user);
+    unawaited(_writeCache(user));
+    notifyListeners();
+
+    // Live broadcasts + push token (never block sign-in on these).
+    NotificationService().start();
+    unawaited(PushNotificationService().bindUser(user.id));
+  }
+
+  void _clear() {
+    _currentUser = null;
+    _isAdmin = false;
+    _isSupportAgent = false;
+    _status = AuthStatus.signedOut;
+    pendingPhoneNumber = null;
+    unawaited(_writeCache(null));
+    unawaited(NotificationService().stop());
     notifyListeners();
   }
 
@@ -141,52 +192,45 @@ class AuthProvider extends ChangeNotifier {
   // Sign in (existing users): straight to social auth.
   // ---------------------------------------------------------------------------
 
-  Future<AppUser?> signInWithGoogle() => _social(
-        () => _auth.signInWithGoogle(),
-        AuthMethod.google,
-      );
-  Future<AppUser?> signInWithApple() => _social(
-        () => _auth.signInWithApple(),
-        AuthMethod.apple,
-      );
+  Future<AppUser?> signInWithGoogle() =>
+      _social(() => _auth.signInWithGoogle(), AuthMethod.google);
 
-  Future<AppUser?> signInDemo() => _social(
-        () async {
-          await Future<void>.delayed(const Duration(milliseconds: 600));
-          return const SocialAuthResult(
-            email: 'demo.traveler@rovlo.com',
-            name: 'Demo Traveler',
-            photoUrl: 'https://api.dicebear.com/7.x/avataaars/png?seed=Demo',
-          );
-        },
-        AuthMethod.google,
-      );
+  Future<AppUser?> signInWithApple() =>
+      _social(() => _auth.signInWithApple(), AuthMethod.apple);
+
+  /// Debug builds only: a throw-away guest account.
+  Future<AppUser?> signInDemo() =>
+      _social(() => _auth.signInAnonymously(), AuthMethod.phone);
 
   Future<AppUser?> _social(
     Future<SocialAuthResult?> Function() run,
     AuthMethod method,
   ) async {
+    if (!Backend.ready) {
+      throw const AuthException(
+        'The app is not connected to its server. Build it with '
+        '--dart-define-from-file=.env (see SUPABASE_SETUP.md).',
+      );
+    }
     _setBusy(true);
     try {
       final result = await run();
-      if (result == null) {
-        // User cancelled the sign-in picker
-        return null;
-      }
-      final user = await _auth.resolveOrCreate(
+      if (result == null) return null; // user cancelled the picker
+
+      final user = await _auth.resolveProfile(
+        userId: result.userId,
         email: result.email,
         name: result.name,
         phoneNumber: pendingPhoneNumber,
         method: method,
         photoUrl: result.photoUrl,
-        firebaseUid: result.firebaseUid,
       );
       if (user.isBlocked) {
-        _setBusy(false);
+        await _auth.signOut();
         throw const AuthException('This account has been suspended.');
       }
       pendingPhoneNumber = null;
-      _commit(user);
+      await _commit(user);
       return user;
     } finally {
       _setBusy(false);
@@ -216,101 +260,82 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Updates the current user's name during profile setup.
-  Future<void> setName(String name) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(name: name.trim());
+  // ---------------------------------------------------------------------------
+  // Profile edits — every one is written to the database first, and the local
+  // copy only changes once the write succeeded.
+  // ---------------------------------------------------------------------------
+
+  Future<void> _apply(AppUser updated) async {
     await _auth.updateUser(updated);
     _currentUser = updated;
+    unawaited(_writeCache(updated));
     notifyListeners();
+  }
+
+  Future<void> setName(String name) async {
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(name: name.trim()));
   }
 
   Future<void> setGender(String gender) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(gender: gender);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(gender: gender));
   }
 
+  /// Photos may be local file paths (just picked) or URLs; local ones are
+  /// uploaded to Storage first so other users can see them.
   Future<void> setPhotos(List<String> photos) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(
-      profilePhotos: photos,
-      photoUrl: photos.isNotEmpty ? photos.first : user.photoUrl,
-    );
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    final urls = await MediaService.instance.ensureAllRemote(photos);
+    await _apply(u.copyWith(
+      profilePhotos: urls,
+      photoUrl: urls.isNotEmpty ? urls.first : u.photoUrl,
+    ));
   }
 
   Future<void> togglePauseAccount() async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(isPaused: !user.isPaused);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(isPaused: !u.isPaused));
   }
 
   Future<void> setDob(String dob) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(dob: dob);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(dob: dob));
   }
 
   Future<void> setHomeBase(String homeBase) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(homeBase: homeBase);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(homeBase: homeBase));
   }
 
   Future<void> setVerified(bool verified) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(isVerified: verified);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(isVerified: verified));
   }
 
   Future<void> setSubscriptionTier(String tier) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(subscriptionTier: tier);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(subscriptionTier: tier));
   }
 
   Future<void> setEmergencyContacts(List<Map<String, String>> contacts) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(emergencyContacts: contacts);
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(emergencyContacts: contacts));
   }
 
   Future<void> setTravelInterests(List<String> interests) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(
-      travelInterests: interests,
-      profileComplete: true,
-    );
-    await _auth.updateUser(updated);
-    _currentUser = updated;
-    notifyListeners();
+    final u = _currentUser;
+    if (u == null) return;
+    await _apply(u.copyWith(travelInterests: interests, profileComplete: true));
   }
 
   Future<void> updateProfile({
@@ -321,39 +346,105 @@ class AuthProvider extends ChangeNotifier {
     String? homeBase,
     List<String>? profilePhotos,
   }) async {
-    final user = _currentUser;
-    if (user == null) return;
-    final updated = user.copyWith(
-      name: name?.trim() ?? user.name,
-      bio: bio?.trim() ?? user.bio,
-      photoUrl: photoUrl ?? user.photoUrl,
-      dob: dob ?? user.dob,
-      homeBase: homeBase ?? user.homeBase,
-      profilePhotos: profilePhotos ?? user.profilePhotos,
-    );
-    await _auth.updateUser(updated);
-    _currentUser = updated;
+    final u = _currentUser;
+    if (u == null) return;
+
+    String? uploadedMain;
+    if (photoUrl != null) {
+      uploadedMain = await MediaService.instance.ensureRemote(photoUrl);
+    }
+    List<String>? uploadedPhotos;
+    if (profilePhotos != null) {
+      uploadedPhotos = await MediaService.instance.ensureAllRemote(profilePhotos);
+    }
+
+    await _apply(u.copyWith(
+      name: name?.trim() ?? u.name,
+      bio: bio?.trim() ?? u.bio,
+      photoUrl: uploadedMain ?? u.photoUrl,
+      dob: dob ?? u.dob,
+      homeBase: homeBase ?? u.homeBase,
+      profilePhotos: uploadedPhotos ?? u.profilePhotos,
+    ));
+  }
+
+  /// Saves the device position + city (used by the map and "near me").
+  Future<void> updateLocation(double lat, double lng, String? city) async {
+    final u = _currentUser;
+    if (u == null || u.ghostMode) return;
+    try {
+      await _users.updateLocation(u.id, lat: lat, lng: lng, city: city);
+      if (city != null && city.isNotEmpty && city != u.city) {
+        _currentUser = u.copyWith(city: city);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[AuthProvider] location update failed: $e');
+    }
+  }
+
+  /// Saves only the city / district name (no coordinates) — used by the Hotlist.
+  Future<void> updateCity(String? city) async {
+    final u = _currentUser;
+    final c = city?.trim() ?? '';
+    if (u == null || c.isEmpty || c == u.city) return;
+    try {
+      await _users.patch(u.id, {'city': c});
+      _currentUser = u.copyWith(city: c);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AuthProvider] city update failed: $e');
+    }
+  }
+
+  /// Ghost mode hides me from the map and removes my stored coordinates.
+  Future<void> setGhostMode(bool enabled) async {
+    final u = _currentUser;
+    if (u == null) return;
+    await _users.patch(u.id, {
+      'ghost_mode': enabled,
+      if (enabled) 'lat': null,
+      if (enabled) 'lng': null,
+    });
+    _currentUser = u.copyWith(ghostMode: enabled);
     notifyListeners();
   }
 
   Future<void> refreshCurrentUser() async {
-    final user = _currentUser;
-    if (user == null) return;
-    final fresh = await _users.findById(user.id);
-    if (fresh != null) {
+    final u = _currentUser;
+    if (u == null) return;
+    try {
+      final fresh = await _users.findById(u.id);
+      if (fresh == null) return;
+      if (fresh.isBlocked) {
+        await signOut();
+        return;
+      }
       _currentUser = fresh;
+      _isAdmin = await _users.isAdmin();
+      _isSupportAgent = await SupportService.instance.isAgent();
+      unawaited(_writeCache(fresh));
       notifyListeners();
+    } catch (e) {
+      debugPrint('[AuthProvider] refresh failed: $e');
     }
   }
 
-  /// Signs out from both Firebase Auth and the local session.
+  /// Signs out of Supabase and Google and forgets the local copy.
   Future<void> signOut() async {
-    await _auth.signOut();
-    _currentUser = null;
-    _status = AuthStatus.signedOut;
-    pendingPhoneNumber = null;
-    await _persistSession(null);
-    notifyListeners();
+    await PushNotificationService().unbindCurrentUser();
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      debugPrint('[AuthProvider] sign-out error (ignored): $e');
+    }
+    _clear();
+  }
+
+  /// Permanently deletes the account and all its data.
+  Future<void> deleteAccount() async {
+    await _auth.deleteMyAccount();
+    _clear();
   }
 
   @override

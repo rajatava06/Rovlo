@@ -25,6 +25,10 @@ class AppUser {
     this.emergencyContacts = const [],
     this.profilePhotos = const <String>[],
     this.isPaused = false,
+    this.ghostMode = false,
+    this.city,
+    this.tripDestination,
+    this.tripDates,
   });
 
   final String id;
@@ -46,8 +50,12 @@ class AppUser {
   final List<Map<String, String>> emergencyContacts;
   final List<String> profilePhotos;
   final bool isPaused;
+  final bool ghostMode;
+  final String? city;
+  final String? tripDestination;
+  final String? tripDates;
 
-  bool get isAdmin => false; // resolved via AppConstants.isAdminEmail(email)
+  bool get isAdmin => false; // admin rights come from the database (AuthProvider.isAdmin)
 
   String get displayName {
     if (name != null && name!.trim().isNotEmpty) return name!.trim();
@@ -108,6 +116,10 @@ class AppUser {
     List<Map<String, String>>? emergencyContacts,
     List<String>? profilePhotos,
     bool? isPaused,
+    bool? ghostMode,
+    String? city,
+    String? tripDestination,
+    String? tripDates,
   }) {
     return AppUser(
       id: id,
@@ -129,6 +141,73 @@ class AppUser {
       emergencyContacts: emergencyContacts ?? this.emergencyContacts,
       profilePhotos: profilePhotos ?? this.profilePhotos,
       isPaused: isPaused ?? this.isPaused,
+      ghostMode: ghostMode ?? this.ghostMode,
+      city: city ?? this.city,
+      tripDestination: tripDestination ?? this.tripDestination,
+      tripDates: tripDates ?? this.tripDates,
+    );
+  }
+
+  /// Columns written to `public.profiles` (snake_case). Location, push token and
+  /// `is_blocked` are deliberately absent — they are managed separately.
+  Map<String, dynamic> toRow() => {
+        'id': id,
+        'email': email,
+        'name': name,
+        'phone_number': phoneNumber,
+        'gender': gender,
+        'auth_method': authMethod.name,
+        'travel_interests': travelInterests,
+        'photo_url': photoUrl,
+        'profile_photos': profilePhotos,
+        'bio': bio,
+        'dob': dob,
+        'home_base': homeBase,
+        'is_verified': isVerified,
+        'subscription_tier': subscriptionTier,
+        'emergency_contacts': emergencyContacts,
+        'is_paused': isPaused,
+        'profile_complete': profileComplete,
+        'ghost_mode': ghostMode,
+        'trip_destination': tripDestination,
+        'trip_dates': tripDates,
+      };
+
+  factory AppUser.fromRow(Map<String, dynamic> row) {
+    List<String> strings(dynamic v) =>
+        (v as List<dynamic>? ?? const <dynamic>[]).map((e) => e.toString()).toList();
+    return AppUser(
+      id: row['id'] as String,
+      createdAt: DateTime.tryParse(row['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      name: row['name'] as String?,
+      email: row['email'] as String?,
+      phoneNumber: row['phone_number'] as String?,
+      gender: row['gender'] as String?,
+      authMethod: AuthMethod.values.firstWhere(
+        (m) => m.name == row['auth_method'],
+        orElse: () => AuthMethod.phone,
+      ),
+      travelInterests: strings(row['travel_interests']),
+      photoUrl: row['photo_url'] as String?,
+      bio: row['bio'] as String?,
+      isBlocked: row['is_blocked'] as bool? ?? false,
+      profileComplete: row['profile_complete'] as bool? ?? false,
+      dob: row['dob'] as String?,
+      homeBase: row['home_base'] as String?,
+      isVerified: row['is_verified'] as bool? ?? false,
+      subscriptionTier: row['subscription_tier'] as String? ?? 'free',
+      emergencyContacts: (row['emergency_contacts'] as List<dynamic>? ??
+              const <dynamic>[])
+          .map((e) => Map<String, String>.from(
+              (e as Map).map((k, v) => MapEntry(k.toString(), v.toString()))))
+          .toList(),
+      profilePhotos: strings(row['profile_photos']),
+      isPaused: row['is_paused'] as bool? ?? false,
+      ghostMode: row['ghost_mode'] as bool? ?? false,
+      city: row['city'] as String?,
+      tripDestination: row['trip_destination'] as String?,
+      tripDates: row['trip_dates'] as String?,
     );
   }
 

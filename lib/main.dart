@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -5,54 +7,79 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'core/backend/backend.dart';
+import 'core/config/env.dart';
 import 'core/theme/theme_provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'services/push_notification_service.dart';
 
-/// Whether Firebase was successfully initialized.
-/// AuthProvider checks this to decide whether to use Firebase Auth or fallback.
+/// Whether Firebase (used only for push notifications) was initialised.
 bool firebaseInitialized = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Rovlo supports portrait usage; lock orientation for a consistent feel.
+  // Rovlo is a portrait app.
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // ── Initialize Firebase (only when secrets are injected via .env) ─────────
-  if (DefaultFirebaseOptions.isConfigured) {
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      firebaseInitialized = true;
-      debugPrint('[Rovlo] Firebase initialized successfully.');
+  // Full-screen: draw behind the status and navigation bars.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
 
-      // Initialize Push Notification Service (FCM)
-      await PushNotificationService().initialize();
-    } catch (e) {
-      firebaseInitialized = false;
-      debugPrint('[Rovlo] Firebase initialization failed: $e');
-    }
-  } else {
-    firebaseInitialized = false;
-    debugPrint('[Rovlo] Firebase secrets not found — run with --dart-define-from-file=.env');
-  }
-  // ─────────────────────────────────────────────────────────────────────────
+  // Backend first (auth session + database); it is quick and needed to decide
+  // which screen to open.
+  await Env.load();
+  await Backend.init();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, ChatProvider>(
+          create: (_) => ChatProvider(),
+          update: (_, auth, chat) {
+            chat!.bindUser(auth.currentUser?.id, isAgent: auth.isSupportAgent);
+            return chat;
+          },
+        ),
       ],
       child: const RovloApp(),
     ),
   );
+
+  // Firebase is only needed for push notifications — never make the user wait
+  // for it.
+  unawaited(_initFirebase());
+}
+
+Future<void> _initFirebase() async {
+  try {
+    if (DefaultFirebaseOptions.isConfigured) {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    } else if (!kIsWeb) {
+      // No FIREBASE_* values were passed: fall back to the native config file
+      // (android/app/google-services.json) so push still works when the app is
+      // started without --dart-define-from-file.
+      await Firebase.initializeApp();
+    } else {
+      debugPrint('[Rovlo] Firebase keys not found — push notifications disabled.');
+      return;
+    }
+    firebaseInitialized = true;
+    await PushNotificationService().initialize();
+  } catch (e) {
+    firebaseInitialized = false;
+    debugPrint('[Rovlo] Firebase initialisation failed: $e');
+  }
 }

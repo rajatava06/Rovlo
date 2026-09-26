@@ -58,8 +58,19 @@ class AppTheme {
           size: 18,
         ),
       ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: background,
+        modalBackgroundColor: background,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightCard,
+        surfaceTintColor: Colors.transparent,
+      ),
       appBarTheme: AppBarTheme(
         elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         backgroundColor: Colors.transparent,
         foregroundColor: textPrimary,
         centerTitle: true,

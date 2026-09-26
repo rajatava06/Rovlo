@@ -41,9 +41,10 @@ class AppColors {
   static const Color headerBlueDark = Color(0xFF1976D2);
 
   // ── Light theme surfaces (warm cream) ────────────────────────────────────────
-  static const Color lightBackground = Color(0xFFF5F8FF); // blue-tinted white
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightCard = Color(0xFFFFFFFF);
+  /// One cream used as the page background of EVERY screen in light mode.
+  static const Color lightBackground = Color(0xFFFAF8F3);
+  static const Color lightSurface = Color(0xFFFAF8F3);
+  static const Color lightCard = Color(0xFFFFFDF8); // warm ivory cards on cream
   static const Color lightTextPrimary = Color(0xFF0D1B2A);   // Deep navy-black
   static const Color lightTextSecondary = Color(0xFF607D8B); // Blue-grey
 

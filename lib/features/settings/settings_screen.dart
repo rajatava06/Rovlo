@@ -82,9 +82,12 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 Icon(Icons.cookie, color: Colors.orange, size: 28),
                 SizedBox(width: 10),
-                Text(
-                  'Cookie & Local Storage Policy',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                // Expanded: the long title used to run off the right edge.
+                Expanded(
+                  child: Text(
+                    'Cookie & Local Storage Policy',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
@@ -125,9 +128,11 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 Icon(Icons.security, color: AppColors.primary, size: 28),
                 SizedBox(width: 10),
-                Text(
-                  'Privacy Policy',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    'Privacy Policy',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),

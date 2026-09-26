@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 import 'app_back_button.dart';
+import 'keyboard_inset.dart';
 
 import 'rovlo_logo.dart';
 
@@ -46,14 +47,26 @@ class OnboardingScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = step / totalSteps;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final headerBlue =
-        isDark ? AppColors.headerBlueDark : const Color(0xFF309AE1);
+    // The blue header is the same in light AND dark mode (only the page below it
+    // changes with the theme).
+    const headerBlue = Color(0xFF309AE1);
     final bodyBg =
-        isDark ? AppColors.darkBackground : const Color(0xFFFAF8F3);
+        isDark ? AppColors.darkBackground : AppColors.lightBackground;
     final canGoBack = onBack != null || Navigator.canPop(context);
     final backAction = onBack ?? () => Navigator.maybePop(context);
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // The header is blue in both themes, so status-bar icons are always light.
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness:
+            isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: Scaffold(
       backgroundColor: bodyBg,
       body: Column(
         children: [
@@ -138,10 +151,20 @@ class OnboardingScaffold extends StatelessWidget {
                     const SizedBox(height: 18),
 
                     // Content area
+                    // Only this region reacts to the keyboard: the header, title
+                    // and button stay exactly where they are while the keyboard
+                    // slides over them, and the focused field scrolls into view.
                     Expanded(
-                      child: SingleChildScrollView(child: child)
-                          .animate(delay: 90.ms)
-                          .fadeIn(duration: 380.ms),
+                      child: KeyboardAvoiding(
+                        // Space below this region (spacer + button + padding)
+                        // is already hidden behind the keyboard.
+                        reserved: 12 + 54 + 20 + MediaQuery.viewPaddingOf(context).bottom,
+                        child: SingleChildScrollView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          child: child,
+                        ),
+                      ).animate(delay: 90.ms).fadeIn(duration: 380.ms),
                     ),
 
                     const SizedBox(height: 12),
@@ -200,6 +223,7 @@ class OnboardingScaffold extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -224,13 +248,15 @@ class _SvgWaveHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final headerHeight = (screenWidth * (288.0 / 360.0)).clamp(230.0, 265.0);
+    // Height of the status bar / notch / punch-hole. The blue bleeds under it
+    // and the artwork starts right below it, so nothing is cropped or covered.
+    final topInset = MediaQuery.viewPaddingOf(context).top;
+    final artHeight = (screenWidth * (288.0 / 360.0)).clamp(230.0, 265.0);
+    final headerHeight = artHeight + topInset;
 
-    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    // Subtle light grey wireline
-    final wireColor = isDark
-        ? Colors.white.withValues(alpha: 0.25)
-        : const Color(0xFF64748B).withValues(alpha: 0.35);
+    // Same look in both themes: black logo, thin slate wire + signpost lines.
+    const textColor = Color(0xFF0B1220);
+    final wireColor = const Color(0xFF64748B).withValues(alpha: 0.45);
 
     return SizedBox(
       height: headerHeight,
@@ -244,19 +270,21 @@ class _SvgWaveHeader extends StatelessWidget {
               painter: _ExactSvgHeaderPainter(
                 headerColor: headerColor,
                 wireColor: wireColor,
+                topInset: topInset,
               ),
             ),
           ),
 
           // ── Top Bar: Back Button & Rovlo Brand ───────────────────────────
           Positioned(
-            top: 0,
+            top: topInset,
             left: 0,
             right: 0,
             child: SafeArea(
+              top: false,
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.only(top: 20, left: 18, right: 18),
+                padding: const EdgeInsets.only(top: 14, left: 18, right: 18),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -264,6 +292,7 @@ class _SvgWaveHeader extends StatelessWidget {
                       RovloBackButton(
                         onPressed: onBack,
                         color: textColor,
+                        backgroundColor: Colors.transparent, // just the line, no circle
                         size: 34,
                         iconSize: 16,
                       ),
@@ -292,13 +321,26 @@ class _ExactSvgHeaderPainter extends CustomPainter {
   const _ExactSvgHeaderPainter({
     required this.headerColor,
     required this.wireColor,
+    this.topInset = 0,
   });
 
   final Color headerColor;
   final Color wireColor;
+  final double topInset;
 
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size fullSize) {
+    // Fill the status-bar / notch area with the header colour, then draw the
+    // artwork (designed for a 360x288 box) below it.
+    canvas.save();
+    if (topInset > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, fullSize.width, topInset + 2),
+        Paint()..color = headerColor,
+      );
+      canvas.translate(0, topInset);
+    }
+    final size = Size(fullSize.width, fullSize.height - topInset);
     final sx = size.width / 360.0;
     final sy = size.height / 288.0;
 
@@ -438,10 +480,13 @@ class _ExactSvgHeaderPainter extends CustomPainter {
       ..close();
     canvas.drawPath(path2, wirePaint);
 
-    canvas.restore();
+    canvas.restore(); // clip
+    canvas.restore(); // inset translate
   }
 
   @override
   bool shouldRepaint(covariant _ExactSvgHeaderPainter oldDelegate) =>
-      oldDelegate.headerColor != headerColor || oldDelegate.wireColor != wireColor;
+      oldDelegate.headerColor != headerColor ||
+      oldDelegate.wireColor != wireColor ||
+      oldDelegate.topInset != topInset;
 }

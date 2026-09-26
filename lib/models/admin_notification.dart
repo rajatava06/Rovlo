@@ -74,6 +74,23 @@ class AdminNotification {
     );
   }
 
+  /// Row of the `broadcasts` table.
+  factory AdminNotification.fromRow(Map<String, dynamic> row) {
+    return AdminNotification(
+      id: row['id'].toString(),
+      title: row['title'] as String? ?? '',
+      body: row['body'] as String? ?? '',
+      sentAt: DateTime.tryParse(row['sent_at'] as String? ?? '')?.toLocal() ??
+          DateTime.now(),
+      type: NotificationType.values.firstWhere(
+        (t) => t.name == row['type'],
+        orElse: () => NotificationType.announcement,
+      ),
+      targetAudience: row['target_audience'] as String? ?? 'All Users',
+      sentBy: row['sent_by'] as String? ?? 'Admin',
+    );
+  }
+
   String toJson() => jsonEncode(toMap());
 
   factory AdminNotification.fromJson(String source) =>

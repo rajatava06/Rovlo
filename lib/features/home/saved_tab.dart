@@ -3,15 +3,47 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/traveler.dart';
+import '../../services/traveler_repository.dart';
 import 'traveler_profile_screen.dart';
 
 /// Saved Profiles & Trips screen.
-class SavedTab extends StatelessWidget {
+class SavedTab extends StatefulWidget {
   const SavedTab({super.key});
 
   @override
+  State<SavedTab> createState() => _SavedTabState();
+}
+
+class _SavedTabState extends State<SavedTab> {
+  List<Traveler> _saved = const [];
+  bool _loading = true;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    try {
+      final list = await TravelerRepository().saved();
+      if (!mounted) return;
+      setState(() => _saved = list);
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final savedProfiles = SampleTravelers.list.take(3).toList();
+    final savedProfiles = _saved;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -34,7 +66,27 @@ class SavedTab extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: ListView.builder(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _failed
+                        ? Center(
+                            child: TextButton.icon(
+                              onPressed: _load,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Could not load. Tap to retry'),
+                            ),
+                          )
+                        : savedProfiles.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Nothing saved yet.\nTap the bookmark on a profile to keep it here.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: context.rovlo.textSecondary),
+                                ),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _load,
+                                child: ListView.builder(
                   itemCount: savedProfiles.length,
                   itemBuilder: (context, index) {
                     final traveler = savedProfiles[index];
@@ -82,7 +134,7 @@ class SavedTab extends StatelessWidget {
                                   Row(
                                     children: [
                                       Text(
-                                        '${traveler.name}, ${traveler.age}',
+                                        traveler.nameWithAge,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,
@@ -132,6 +184,7 @@ class SavedTab extends StatelessWidget {
                     );
                   },
                 ),
+                              ),
               ),
             ],
           ),
