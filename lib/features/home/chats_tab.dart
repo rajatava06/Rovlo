@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/online_dot.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/chat_repository.dart';
 import '../../services/traveler_repository.dart';
+import 'chat_request_actions.dart';
 import 'chat_room_screen.dart';
 
 class ChatsTab extends StatelessWidget {
@@ -24,34 +27,25 @@ class ChatsTab extends StatelessWidget {
     final newMatches = chatProvider.newMatches;
     final requests = chatProvider.requests;
     final pending = chatProvider.pending;
-    final hasTopRow = requests.isNotEmpty || newMatches.isNotEmpty || pending.isNotEmpty;
-
+    final chatRequestsIn = chatProvider.incomingChatRequests;
+    final chatRequestsOut = chatProvider.outgoingChatRequests;
+    final hasTopRow = requests.isNotEmpty ||
+        newMatches.isNotEmpty ||
+        pending.isNotEmpty ||
+        chatRequestsOut.isNotEmpty;
 
     void openChatRoom(String peerId, String name, String imageUrl, bool isVerified) {
-      chatProvider.ensureConversation(
+      openChatWith(
+        context,
         peerId: peerId,
         name: name,
         imageUrl: imageUrl,
         isVerified: isVerified,
       );
-      chatProvider.markAsRead(peerId);
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatRoomScreen(
-            args: ChatRoomArgs(
-              peerId: peerId,
-              name: name,
-              imageUrl: imageUrl,
-              isVerified: isVerified,
-            ),
-          ),
-        ),
-      );
     }
 
-    // One entry per bubble: people who liked me first, then new matches, then
-    // people I liked who have not answered yet.
+    // One entry per bubble: people who liked me first, then new chats, then
+    // people I asked / liked who have not answered yet.
     final bubbles = <_Bubble>[
       for (final r in requests)
         _Bubble(
@@ -69,6 +63,14 @@ class ChatsTab extends StatelessWidget {
           kind: _BubbleKind.match,
           onTap: () => openChatRoom(m.id, m.name, m.photoUrl, m.isVerified),
         ),
+      for (final r in chatRequestsOut)
+        _Bubble(
+          id: r.peerId,
+          name: r.name,
+          photoUrl: r.photoUrl,
+          kind: _BubbleKind.pending,
+          onTap: () => _showSentRequestSheet(context, r),
+        ),
       for (final p in pending)
         _Bubble(
           id: p.id,
@@ -84,6 +86,24 @@ class ChatsTab extends StatelessWidget {
         ),
     ];
 
+    Widget sectionTitle(String text, {Widget? trailing}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: textSecColor,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing],
+            ],
+          ),
+        );
+
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -95,11 +115,7 @@ class ChatsTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.chat_bubble_outline,
-                    color: primaryPeach,
-                    size: 24,
-                  ),
+                  Icon(Icons.chat_bubble_outline, color: primaryPeach, size: 24),
                   const SizedBox(width: 8),
                   Text(
                     'Chats',
@@ -108,195 +124,412 @@ class ChatsTab extends StatelessWidget {
                           color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                         ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(
-                      Icons.search,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                    ),
-                  ),
                 ],
               ),
             ),
 
-            // ── New Matches Header ──────────────────────────────────────────────
-            if (hasTopRow) Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Text(
-                'NEW MATCHES',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: textSecColor,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-
-            // ── New Matches Scroll ──────────────────────────────────────────────
-            if (hasTopRow)
-              SizedBox(
-                height: 112,
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: bubbles.length,
-                  itemBuilder: (context, index) => _BubbleView(
-                    bubble: bubbles[index],
-                    accent: primaryPeach,
-                  ),
-                ),
-              ),
-
-            if (hasTopRow) const SizedBox(height: 12),
-
-            // ── Messages Header ────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Text(
-                'MESSAGES',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: textSecColor,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-
-            // ── Messages List ──────────────────────────────────────────────────
+            // Everything below scrolls together (requests, new chats, messages).
             Expanded(
               child: RefreshIndicator(
                 onRefresh: chatProvider.refresh,
-                child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: conversations.length,
-                itemBuilder: (context, index) {
-                  final conv = conversations[index];
-                  final timeText = conv.timeText;
-                  final snippetText = conv.previewText;
-
-                  return GestureDetector(
-                    onTap: () => openChatRoom(conv.peerId, conv.contactName, conv.contactImageUrl, conv.isVerified),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Stack(
-                            children: [
-                              if (conv.isBot || conv.isSupport)
-                                Container(
-                                  width: 56,
-                                  height: 56,
-                                  padding: const EdgeInsets.all(11),
-                                  decoration: BoxDecoration(
-                                    color: primaryPeach,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Image.asset(
-                                    'assets/images/rovlo_icon.png',
-                                    color: Colors.white,
-                                    fit: BoxFit.contain,
-                                  ),
-                                )
-                              else
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundImage: CachedNetworkImageProvider(conv.contactImageUrl),
-                                ),
-                              if (!conv.isBot && !conv.isSupport)
-                                Positioned(
-                                  right: 0,
-                                  bottom: 0,
-                                  child: Container(
-                                    width: 14,
-                                    height: 14,
-                                    decoration: BoxDecoration(
-                                      color: Colors.green,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: cardColor,
-                                        width: 2.5,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 110),
+                  children: [
+                    // ── Chat requests (accept / decline right here) ─────────────
+                    if (chatRequestsIn.isNotEmpty) ...[
+                      sectionTitle(
+                        'CHAT REQUESTS',
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: primaryPeach,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      conv.contactName,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    if (conv.isVerified) ...[
-                                      const SizedBox(width: 4),
-                                      const Icon(Icons.verified, color: AppColors.primary, size: 14),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  snippetText,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: conv.hasUnread
-                                        ? (isDark ? Colors.white : AppColors.lightTextPrimary)
-                                        : textSecColor,
-                                    fontWeight: conv.hasUnread ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                          child: Text(
+                            '${chatRequestsIn.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                        ),
+                      ),
+                      _RequestsList(requests: chatRequestsIn, accent: primaryPeach),
+                      const SizedBox(height: 8),
+                    ],
+
+                    // ── New chats / pending ─────────────────────────────────────
+                    if (hasTopRow) ...[
+                      sectionTitle('NEW MATCHES'),
+                      SizedBox(
+                        height: 112,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: bubbles.length,
+                          itemBuilder: (context, index) => _BubbleView(
+                            bubble: bubbles[index],
+                            accent: primaryPeach,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // ── Messages ────────────────────────────────────────────────
+                    sectionTitle('MESSAGES'),
+                    for (final conv in conversations)
+                      _ConversationTile(
+                        conv: conv,
+                        isDark: isDark,
+                        cardColor: cardColor,
+                        textSecColor: textSecColor,
+                        primaryPeach: primaryPeach,
+                        onTap: () => openChatRoom(
+                          conv.peerId,
+                          conv.contactName,
+                          conv.contactImageUrl,
+                          conv.isVerified,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Chat requests ────────────────────────────────────────────────────────────
+
+/// Requests waiting for my answer, each with Accept / Decline buttons. Shows the
+/// newest three and lets me expand the rest.
+class _RequestsList extends StatefulWidget {
+  const _RequestsList({required this.requests, required this.accent});
+
+  final List<ChatRequest> requests;
+  final Color accent;
+
+  @override
+  State<_RequestsList> createState() => _RequestsListState();
+}
+
+class _RequestsListState extends State<_RequestsList> {
+  static const int _collapsed = 3;
+  bool _expanded = false;
+  final Set<String> _busy = {};
+
+  Future<void> _answer(ChatRequest r, bool accept) async {
+    setState(() => _busy.add(r.id));
+    await answerChatRequest(context, r, accept: accept, openChat: accept);
+    if (mounted) setState(() => _busy.remove(r.id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = widget.requests;
+    final shown = _expanded ? list : list.take(_collapsed).toList();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textSec = context.rovlo.textSecondary;
+
+    return Column(
+      children: [
+        for (final r in shown)
+          Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.rovlo.card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: widget.accent.withValues(alpha: 0.35), width: 1.4),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 26,
+                          backgroundImage: CachedNetworkImageProvider(r.photoUrl),
+                        ),
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: OnlineDot(
+                            userId: r.peerId,
+                            size: 13,
+                            borderColor: context.rovlo.card,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Text(
-                                timeText,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: textSecColor.withValues(alpha: 0.6),
+                              Flexible(
+                                child: Text(
+                                  r.nameWithAge,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.bold),
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              if (conv.hasUnread)
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF8B5A2B), // Brown dot representing unread message
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
+                              if (r.isVerified) ...[
+                                const SizedBox(width: 4),
+                                Icon(Icons.verified, color: widget.accent, size: 14),
+                              ],
                             ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            r.city.isNotEmpty
+                                ? 'wants to chat with you · ${r.city}'
+                                : 'wants to chat with you',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: textSec),
                           ),
                         ],
                       ),
                     ),
-                  );
-                },
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _busy.contains(r.id) ? null : () => _answer(r, false),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(42),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                        child: const Text('Decline'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: _busy.contains(r.id) ? null : () => _answer(r, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.accent,
+                          minimumSize: const Size.fromHeight(42),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: _busy.contains(r.id)
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                        label: const Text(
+                          'Accept',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        if (list.length > _collapsed)
+          TextButton(
+            onPressed: () => setState(() => _expanded = !_expanded),
+            child: Text(_expanded ? 'Show less' : 'Show ${list.length - _collapsed} more'),
+          ),
+      ],
+    );
+  }
+}
+
+/// Tapping a request I sent: it is still waiting — offer to cancel it.
+Future<void> _showSentRequestSheet(BuildContext context, ChatRequest r) async {
+  final chat = context.read<ChatProvider>();
+  final messenger = ScaffoldMessenger.of(context);
+  final cancel = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(radius: 40, backgroundImage: CachedNetworkImageProvider(r.photoUrl)),
+          const SizedBox(height: 12),
+          Text(r.nameWithAge,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(
+            'Your chat request is waiting for ${r.name} to accept.\n'
+            "You'll get a notification as soon as they do.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: ctx.rovlo.textSecondary, height: 1.4),
+          ),
+          const SizedBox(height: 18),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            child: const Text('Cancel request'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (cancel != true) return;
+  try {
+    await chat.cancelChatRequest(r.peerId);
+    messenger.showSnackBar(SnackBar(content: Text('Request to ${r.name} cancelled.')));
+  } catch (_) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Could not cancel. Check your connection.')),
+    );
+  }
+}
+
+// ── Conversation row ─────────────────────────────────────────────────────────
+
+class _ConversationTile extends StatelessWidget {
+  const _ConversationTile({
+    required this.conv,
+    required this.isDark,
+    required this.cardColor,
+    required this.textSecColor,
+    required this.primaryPeach,
+    required this.onTap,
+  });
+
+  final ChatConversation conv;
+  final bool isDark;
+  final Color cardColor;
+  final Color textSecColor;
+  final Color primaryPeach;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.05),
+          ),
+        ),
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (conv.isBot || conv.isSupport)
+                  Container(
+                    width: 56,
+                    height: 56,
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(color: primaryPeach, shape: BoxShape.circle),
+                    child: Image.asset(
+                      'assets/images/rovlo_icon.png',
+                      color: Colors.white,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                else
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundImage: CachedNetworkImageProvider(conv.contactImageUrl),
+                  ),
+                if (conv.isPeer)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: OnlineDot(
+                      userId: conv.peerId,
+                      size: 15,
+                      borderColor: cardColor,
+                      borderWidth: 2.5,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          conv.contactName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      if (conv.isVerified) ...[
+                        const SizedBox(width: 4),
+                        const Icon(Icons.verified, color: AppColors.primary, size: 14),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    conv.previewText,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: conv.hasUnread
+                          ? (isDark ? Colors.white : AppColors.lightTextPrimary)
+                          : textSecColor,
+                      fontWeight: conv.hasUnread ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  conv.timeText,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: textSecColor.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                if (conv.hasUnread)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF8B5A2B), // Brown dot representing unread message
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),

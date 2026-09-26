@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/backend/backend.dart';
 import '../models/traveler.dart';
+import '../models/trip.dart';
 
 enum SwipeKind { like, pass, save }
 
@@ -157,25 +158,75 @@ class TravelerRepository {
     }
   }
 
-  /// "Save this trip": stores the trip and shows it on my profile.
+  /// Bumped whenever my trips change so every screen showing them can reload.
+  static final ValueNotifier<int> tripsRevision = ValueNotifier<int>(0);
+
+  /// "Save this trip": stored in the database (visible to other travellers
+  /// going to the same place) and shown on my profile. Saving the same
+  /// place + week again just updates it.
   Future<void> saveTrip({
     required String destination,
+    double? lat,
+    double? lng,
     required String week,
     required String month,
     required String year,
   }) async {
-    final uid = Backend.uid;
-    if (uid == null) return;
-    await _db.from('trips').insert({
-      'user_id': uid,
-      'destination': destination,
-      'travel_week': week,
-      'travel_month': month,
-      'travel_year': year,
+    await _db.rpc('save_trip', params: {
+      'p_destination': destination,
+      'p_lat': lat,
+      'p_lng': lng,
+      'p_week': week,
+      'p_month': month,
+      'p_year': year,
     });
-    await _db.from('profiles').update({
-      'trip_destination': destination,
-      'trip_dates': '$week, $month $year',
-    }).eq('id', uid);
+    tripsRevision.value++;
+  }
+
+  /// My upcoming trips, soonest first.
+  Future<List<Trip>> myTrips() async {
+    final uid = Backend.uid;
+    if (uid == null) return const [];
+    final today = DateTime.now();
+    final iso = '${today.year.toString().padLeft(4, '0')}-'
+        '${today.month.toString().padLeft(2, '0')}-'
+        '${today.day.toString().padLeft(2, '0')}';
+    final rows = await _db
+        .from('trips')
+        .select()
+        .eq('user_id', uid)
+        .gte('end_date', iso)
+        .order('start_date', ascending: true);
+    return (rows as List)
+        .map((r) => Trip.fromRow(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
+  Future<void> deleteTrip(String id) async {
+    await _db.rpc('delete_trip', params: {'p_id': id});
+    tripsRevision.value++;
+  }
+
+  /// Travellers going to the same place, best date match first (same week,
+  /// then within a month, then later), closest to me first.
+  Future<List<Traveler>> goingTo({
+    required String destination,
+    double? lat,
+    double? lng,
+    required String week,
+    required String month,
+    required String year,
+    int limit = 60,
+  }) async {
+    final rows = await _db.rpc('travelers_going_to', params: {
+      'p_destination': destination,
+      'p_lat': lat,
+      'p_lng': lng,
+      'p_week': week,
+      'p_month': month,
+      'p_year': year,
+      'p_limit': limit,
+    });
+    return _travelers(rows);
   }
 }

@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_repository.dart';
 import 'support_inbox.dart';
+import 'verification_queue.dart';
 
 /// Admin Panel — restricted to accounts listed in the `admin_emails` table.
 class AdminPanelScreen extends StatefulWidget {
@@ -49,7 +50,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   void initState() {
     super.initState();
     _hasSupport = context.read<AuthProvider>().isSupportAgent;
-    _tabController = TabController(length: _hasSupport ? 3 : 2, vsync: this);
+    // Roster, Push, Verification (+ Support for agents)
+    _tabController = TabController(length: _hasSupport ? 4 : 3, vsync: this);
     _repo = context.read<AuthProvider>().users;
     _notificationService = NotificationService();
     _load();
@@ -139,12 +141,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: _hasSupport,
           indicatorColor: primaryPeach,
           labelColor: primaryPeach,
           unselectedLabelColor: isDark ? Colors.white70 : AppColors.lightTextSecondary,
           tabs: [
             const Tab(icon: Icon(Icons.people_alt_outlined), text: 'User Roster'),
             const Tab(icon: Icon(Icons.notifications_active_outlined), text: 'Push Notification'),
+            const Tab(icon: Icon(Icons.verified_user_outlined), text: 'Verification'),
             if (_hasSupport) const Tab(icon: Icon(Icons.support_agent), text: 'Support'),
           ],
         ),
@@ -171,6 +175,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                     children: [
                       _buildUserRosterTab(context, primaryPeach),
                       _buildPushNotificationTab(context, primaryPeach),
+                      const VerificationQueue(),
                       if (_hasSupport) const SupportInbox(),
                     ],
                   ),

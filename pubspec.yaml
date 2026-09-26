@@ -41,6 +41,19 @@ dependencies:
   crypto: ^3.0.6
   http: ^1.2.1
 
+  # Chat: end-to-end encryption (X25519 + AES-256-GCM), key storage, dictation
+  cryptography: ^2.7.0
+  flutter_secure_storage: ^9.2.4
+  speech_to_text: ^7.0.0
+
+  # Face photo for profile verification (in-app front camera)
+  camera: ^0.11.0
+
+  # SOS: loud siren, keep screen on, share the location message
+  audioplayers: ^6.1.0
+  wakelock_plus: ^1.2.8
+  share_plus: ^10.1.0
+
   # Image Picking / Networking / Links
   image_picker: ^1.1.2
   cached_network_image: ^3.4.1
@@ -60,3 +73,4 @@ flutter:
     - assets/videos/
     - assets/images/
     - assets/config/
+    - assets/audio/

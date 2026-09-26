@@ -2,15 +2,24 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../../core/backend/backend.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/app_navigation.dart';
+import '../../services/chat_repository.dart';
+import '../../services/location_sharing_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/traveler_repository.dart' show LikeRequest;
+import '../../services/verification_service.dart';
+import 'chat_request_actions.dart';
 import 'explore_tab.dart';
 import 'profile_tab.dart';
 import 'maps_tab.dart';
@@ -35,21 +44,67 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isNavVisible = true;
   StreamSubscription<String>? _notificationSub;
   StreamSubscription? _adminNotifSub;
+  StreamSubscription<ChatRequest>? _requestSub;
+  StreamSubscription<LikeRequest>? _likeSub;
+  LikeRequest? _likeBanner;
+  Timer? _requestBannerTimer;
+  RealtimeChannel? _verificationChannel;
+  ChatRequest? _requestBanner;
+  bool _requestBusy = false;
   String? _bannerText;
+  bool _bannerIsChat = false;
   bool _showBanner = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<AuthProvider>().refreshCurrentUser(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      auth.refreshCurrentUser();
+      // Share my position while the app is open, so others see me on their map.
+      LocationSharingService.instance.start(auth);
+
+      // An admin approved / rejected my verification: show the tick right away.
+      _verificationChannel = VerificationService.instance.watchMine((status) {
+        if (!mounted) return;
+        if (status.state == VerificationState.approved) {
+          auth.refreshCurrentUser();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            duration: Duration(seconds: 6),
+            content: Text('🎉 You are verified! The blue tick is now on your profile.'),
+          ));
+        } else if (status.state == VerificationState.rejected) {
+          final why = (status.note?.isNotEmpty ?? false) ? ' Reason: ${status.note}' : '';
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text('Your verification was not approved.$why You can try again from Profile → Verify.'),
+          ));
+        }
+      });
+    });
+
+    // A chat notification was tapped (also when it launched the app).
+    AppNavigation.openChatsRequested.addListener(_onOpenChatsRequested);
+    AppNavigation.mapFocus.addListener(_onMapFocus);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onOpenChatsRequested());
 
     // Chat notification banner
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    // Somebody asked to chat: banner with Accept / Decline.
+    _requestSub = chatProvider.incomingRequestStream.listen(_showRequestBanner);
+    // Somebody liked me: same banner, Accept (= like back → match) / Decline.
+    _likeSub = chatProvider.incomingLikeStream.listen(_showLikeBanner);
+    // Requests that arrived while the app was closed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      chatProvider.replayPendingRequests();
+      chatProvider.replayPendingLikes();
+    });
+
     _notificationSub = chatProvider.notificationStream.listen((msg) {
       if (!mounted) return;
       setState(() {
+        _bannerIsChat = true;
         _bannerText = msg;
         _showBanner = true;
       });
@@ -63,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _adminNotifSub = NotificationService().onNotification.listen((notif) {
       if (!mounted) return;
       setState(() {
+        _bannerIsChat = false;
         _bannerText = '${notif.title}: ${notif.body}';
         _showBanner = true;
       });
@@ -73,11 +129,116 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Opens the Chats tab (notification tap / tapping the in-app banner) and
+  /// closes any screen that is on top of Home.
+  void _goToChats() {
+    AppNavigation.openChatsRequested.value = false;
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    setState(() {
+      _index = 3;
+      _isNavVisible = true;
+      _showBanner = false;
+    });
+  }
+
+  /// A shared location was tapped in a chat: leave the chat and show it on the map.
+  void _onMapFocus() {
+    if (AppNavigation.mapFocus.value == null || !mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    setState(() {
+      _index = 0;
+      _isNavVisible = true;
+    });
+  }
+
+  void _onOpenChatsRequested() {
+    if (AppNavigation.openChatsRequested.value) _goToChats();
+  }
+
   @override
   void dispose() {
+    AppNavigation.openChatsRequested.removeListener(_onOpenChatsRequested);
+    AppNavigation.mapFocus.removeListener(_onMapFocus);
     _notificationSub?.cancel();
     _adminNotifSub?.cancel();
+    _requestSub?.cancel();
+    _likeSub?.cancel();
+    _requestBannerTimer?.cancel();
+    LocationSharingService.instance.stop();
+    final vc = _verificationChannel;
+    if (vc != null) Backend.client.removeChannel(vc);
     super.dispose();
+  }
+
+  void _showRequestBanner(ChatRequest request) {
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    _requestBannerTimer?.cancel();
+    setState(() => _requestBanner = request);
+    // Stays long enough to read and answer; it is also in Chats → Requests.
+    _requestBannerTimer = Timer(const Duration(seconds: 25), _hideRequestBanner);
+  }
+
+  void _showLikeBanner(LikeRequest like) {
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    _requestBannerTimer?.cancel();
+    setState(() => _likeBanner = like);
+    _requestBannerTimer = Timer(const Duration(seconds: 25), _hideRequestBanner);
+  }
+
+  void _hideRequestBanner() {
+    _requestBannerTimer?.cancel();
+    if (!mounted || (_requestBanner == null && _likeBanner == null)) return;
+    setState(() {
+      _requestBanner = null;
+      _likeBanner = null;
+    });
+  }
+
+  Future<void> _answerLike(LikeRequest like, {required bool accept}) async {
+    final chat = context.read<ChatProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _requestBusy = true);
+    try {
+      if (accept) {
+        final match = await chat.acceptRequest(like.id);
+        messenger.showSnackBar(SnackBar(
+          content: Text(match
+              ? "It's a match with ${like.name}! 🎉 You can chat now."
+              : 'Accepted.'),
+        ));
+        _hideRequestBanner();
+        if (mounted) {
+          openChatWith(
+            context,
+            peerId: like.id,
+            name: like.name,
+            imageUrl: like.photoUrl,
+            isVerified: like.isVerified,
+          );
+        }
+      } else {
+        await chat.declineRequest(like.id);
+        messenger.showSnackBar(SnackBar(content: Text('Declined ${like.name}.')));
+        _hideRequestBanner();
+      }
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not do that. Check your connection.')),
+      );
+    } finally {
+      if (mounted) setState(() => _requestBusy = false);
+    }
+  }
+
+  Future<void> _answerBanner(ChatRequest r, {required bool accept}) async {
+    setState(() => _requestBusy = true);
+    final ok = await answerChatRequest(context, r, accept: accept, openChat: accept);
+    if (!mounted) return;
+    setState(() => _requestBusy = false);
+    if (ok) _hideRequestBanner();
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -123,7 +284,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final chatProvider = context.watch<ChatProvider>();
     final hasUnread = chatProvider.hasUnreadMessages;
 
-    return Scaffold(
+    // Back: from any other tab go to Discover first; from Discover the system
+    // closes the app (Home is the root route — never back to sign-in).
+    return PopScope(
+      canPop: _index == 2 && !_showBanner,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        setState(() {
+          if (_showBanner) {
+            _showBanner = false;
+          } else {
+            _index = 2;
+            _isNavVisible = true;
+          }
+        });
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           // ── Tab Content with Scroll Detection ────────────────────────────
@@ -150,8 +326,56 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
+          // ── Chat request banner (Accept / Decline) ───────────────────────
+          if (_requestBanner != null &&
+              chatProvider.incomingChatRequests.any((r) => r.id == _requestBanner!.id))
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                child: _ChatRequestBanner(
+                  photoUrl: _requestBanner!.photoUrl,
+                  title: _requestBanner!.nameWithAge,
+                  subtitle: 'wants to chat with you 💬',
+                  busy: _requestBusy,
+                  onOpen: () {
+                    _hideRequestBanner();
+                    setState(() => _index = 3);
+                  },
+                  onAccept: () => _answerBanner(_requestBanner!, accept: true),
+                  onDecline: () => _answerBanner(_requestBanner!, accept: false),
+                  onClose: _hideRequestBanner,
+                ),
+              ),
+            ).animate(key: ValueKey(_requestBanner!.id)).slideY(
+                begin: -1.0, end: 0.0, duration: 300.ms, curve: Curves.easeOutQuad).fadeIn()
+          // ── Like banner (Accept / Decline) ──────────────────────────────
+          else if (_likeBanner != null &&
+              chatProvider.requests.any((r) => r.id == _likeBanner!.id))
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                child: _ChatRequestBanner(
+                  photoUrl: _likeBanner!.photoUrl,
+                  title: _likeBanner!.nameWithAge,
+                  subtitle: 'liked you 💙 Accept to start chatting',
+                  busy: _requestBusy,
+                  onOpen: () {
+                    _hideRequestBanner();
+                    setState(() => _index = 3);
+                  },
+                  onAccept: () => _answerLike(_likeBanner!, accept: true),
+                  onDecline: () => _answerLike(_likeBanner!, accept: false),
+                  onClose: _hideRequestBanner,
+                ),
+              ),
+            ).animate(key: ValueKey('like-${_likeBanner!.id}')).slideY(
+                begin: -1.0, end: 0.0, duration: 300.ms, curve: Curves.easeOutQuad).fadeIn()
           // ── Notification Banner ──────────────────────────────────────────
-          if (_showBanner && _bannerText != null)
+          else if (_showBanner && _bannerText != null)
             Positioned(
               top: 16,
               left: 16,
@@ -161,7 +385,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   elevation: 10,
                   borderRadius: BorderRadius.circular(16),
                   color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                  child: Container(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: _bannerIsChat ? _goToChats : null,
+                    child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
@@ -180,8 +407,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(
-                                'New Notification',
+                              Text(
+                                _bannerIsChat
+                                    ? 'New chat · tap to open'
+                                    : 'New Notification',
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold, fontSize: 13),
                               ),
@@ -206,6 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -247,6 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -519,4 +750,133 @@ class _NavItem {
   final String label;
 }
 
+/// "<Name> wants to chat with you" with Accept / Decline right in the app.
+class _ChatRequestBanner extends StatelessWidget {
+  const _ChatRequestBanner({
+    required this.photoUrl,
+    required this.title,
+    required this.subtitle,
+    required this.busy,
+    required this.onOpen,
+    required this.onAccept,
+    required this.onDecline,
+    required this.onClose,
+  });
 
+  final String photoUrl;
+  final String title;
+  final String subtitle;
+  final bool busy;
+  final VoidCallback onOpen;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+
+    return Material(
+      elevation: 12,
+      borderRadius: BorderRadius.circular(20),
+      color: isDark ? AppColors.darkCard : AppColors.lightCard,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: primary.withValues(alpha: 0.4), width: 1.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: onOpen,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundImage: CachedNetworkImageProvider(photoUrl),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: context.rovlo.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: onClose,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: busy ? null : onDecline,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(40),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      onPressed: busy ? null : onAccept,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        minimumSize: const Size.fromHeight(40),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: busy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                      label: const Text(
+                        'Accept',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

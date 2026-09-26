@@ -76,8 +76,6 @@ class _HotTabState extends State<HotTab> {
   String? _detectedCity;
   bool _manualCity = false;
   LocationStatus? _locationProblem;
-  double? _lat;
-  double? _lng;
 
   List<HotEvent> _events = const [];
   bool _loading = true;
@@ -116,8 +114,6 @@ class _HotTabState extends State<HotTab> {
         auth.currentUser?.city ??
         _cityFromHomeBase(auth.currentUser?.homeBase);
     if (!mounted) return;
-    _lat = cachedFix?.lat;
-    _lng = cachedFix?.lng;
     if (startCity != null) {
       _manualCity = manual != null;
       _load(startCity);
@@ -148,16 +144,14 @@ class _HotTabState extends State<HotTab> {
     }
 
     final fix = res.fix!;
-    _lat = fix.lat;
-    _lng = fix.lng;
     setState(() {
       _locationProblem = null;
       _detectedCity = fix.city;
     });
-    // Keep my profile position fresh (used by the map / nearby travellers).
-    unawaited(context
-        .read<AuthProvider>()
-        .updateLocation(fix.lat, fix.lng, fix.city));
+    // The Hotlist only ever needs the CITY / DISTRICT name — no coordinates
+    // leave this tab (the map shares position separately, and only when
+    // Ghost Mode is off).
+    unawaited(context.read<AuthProvider>().updateCity(fix.city));
 
     if (applyIfNotManual &&
         fix.city != null &&
@@ -177,14 +171,18 @@ class _HotTabState extends State<HotTab> {
 
   Future<void> _chooseCity(String city) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsManualCity, city);
+    await prefs.setString(_prefsManualCity, LocationService.cleanCityName(city.split(',').first.trim()));
     _manualCity = true;
     if (mounted) _load(city);
   }
 
   // ── Events ──────────────────────────────────────────────────────────────────
 
-  Future<void> _load(String city, {bool force = false}) async {
+  Future<void> _load(String rawCity, {bool force = false}) async {
+    // Events are looked up by plain city / district name, never by an exact
+    // position or street address: "MG Road, Pune, India" becomes "MG Road" →
+    // only the first part is used, and a typed street is not accepted as-is.
+    final city = LocationService.cleanCityName(rawCity.split(',').first.trim());
     final token = ++_token;
     setState(() {
       _city = city;
@@ -216,7 +214,7 @@ class _HotTabState extends State<HotTab> {
     if (!force && !stale) return;
 
     setState(() => _syncing = true);
-    final changed = await _repo.sync(city, lat: _lat, lng: _lng, force: force);
+    final changed = await _repo.sync(city, force: force);
     _syncedAt[key] = DateTime.now();
     if (!mounted || token != _token) return;
     if (changed) {
@@ -398,7 +396,11 @@ class _HotTabState extends State<HotTab> {
                       controller: _searchController,
                       style: const TextStyle(fontSize: 13.5),
                       textInputAction: TextInputAction.search,
+                      // Centre the text on the same line as the search icon
+                      // (the theme's default padding pushed it off-centre).
+                      textAlignVertical: TextAlignVertical.center,
                       decoration: InputDecoration(
+                        contentPadding: EdgeInsets.zero,
                         hintText: 'Search artists, venues, festivals...',
                         hintStyle: TextStyle(
                           fontSize: 13,
@@ -518,13 +520,33 @@ class _HotTabState extends State<HotTab> {
                           ),
                           if (_city != null)
                             Flexible(
-                              child: Text(
-                                'Location: $_city',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: primaryBlue,
-                                  fontWeight: FontWeight.w600,
+                              child: Container(
+                                margin: const EdgeInsets.only(left: 12),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: primaryBlue.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.location_on_rounded,
+                                        size: 14, color: primaryBlue),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        _city!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: primaryBlue,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

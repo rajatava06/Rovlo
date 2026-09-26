@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,7 +15,10 @@ import '../../core/widgets/rovlo_loader.dart';
 import '../../core/widgets/rovlo_logo.dart';
 import '../../models/admin_notification.dart';
 import '../../models/traveler.dart';
+import '../../models/trip.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/location_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/traveler_repository.dart';
 import 'traveler_profile_screen.dart';
@@ -27,15 +31,59 @@ class ExploreTab extends StatefulWidget {
 }
 
 class _ExploreTabState extends State<ExploreTab> {
+  static const _weeks = ['1st Week', '2nd Week', '3rd Week', '4th Week'];
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  static const _popular = <PlaceResult>[
+    PlaceResult(
+      name: 'Bali, Indonesia',
+      title: 'Bali',
+      subtitle: 'Indonesia',
+      lat: -8.4095,
+      lng: 115.1889,
+    ),
+    PlaceResult(
+      name: 'Barcelona, Spain',
+      title: 'Barcelona',
+      subtitle: 'Spain',
+      lat: 41.3874,
+      lng: 2.1686,
+    ),
+    PlaceResult(
+      name: 'Kyoto, Japan',
+      title: 'Kyoto',
+      subtitle: 'Japan',
+      lat: 35.0116,
+      lng: 135.7681,
+    ),
+  ];
+
   bool _isNearMe = true;
   String _query = '';
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  List<String> _suggestions = [];
-  String? _selectedLocation;
-  String _selectedWeek = '2nd Week';
-  String _selectedMonth = 'Oct';
-  String _selectedYear = '2026';
+
+  // "Going to…" search + date
+  Timer? _searchDebounce;
+  int _searchToken = 0;
+  bool _searching = false;
+  bool _searchDone = false;
+  List<PlaceResult> _placeResults = [];
+  String? _destLabel;
+  double? _destLat;
+  double? _destLng;
+  late String _selectedWeek;
+  late String _selectedMonth;
+  late String _selectedYear;
+
+  List<Trip> _myTrips = const [];
+  List<Traveler> _going = const [];
+  bool _loadingGoing = false;
+  bool _goingFailed = false;
+  int _goingToken = 0;
+  bool _savingTrip = false;
 
   String _getFormattedDateCompact() {
     final wkShort = _selectedWeek
@@ -51,6 +99,39 @@ class _ExploreTabState extends State<ExploreTab> {
     return '$_selectedWeek, $_selectedMonth $_selectedYear';
   }
 
+  /// Last day of the chosen travel week (4th week runs to the end of the month).
+  DateTime get _selectedWindowEnd {
+    final month = _months.indexOf(_selectedMonth) + 1;
+    final year = int.tryParse(_selectedYear) ?? DateTime.now().year;
+    final n = _weeks.indexOf(_selectedWeek) + 1;
+    return n >= 4 ? DateTime(year, month + 1, 0) : DateTime(year, month, 7 * n);
+  }
+
+  bool get _selectedDatesInPast {
+    final now = DateTime.now();
+    return _selectedWindowEnd.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  /// Same place = within 75 km (same rule as the database), or the same name
+  /// for old trips saved without coordinates.
+  bool _sameDestination(Trip t) {
+    final lat = _destLat, lng = _destLng, label = _destLabel;
+    if (label == null) return false;
+    if (t.lat != null && t.lng != null && lat != null && lng != null) {
+      return const Distance().as(
+              LengthUnit.Kilometer, LatLng(t.lat!, t.lng!), LatLng(lat, lng)) <=
+          75;
+    }
+    return t.destination.split(',').first.trim().toLowerCase() ==
+        label.split(',').first.trim().toLowerCase();
+  }
+
+  bool get _tripAlreadySaved => _myTrips.any((t) =>
+      t.week == _selectedWeek &&
+      t.month == _selectedMonth &&
+      t.year == _selectedYear &&
+      _sameDestination(t));
+
   // Real notifications: admin broadcasts + new matches (from the database).
   final List<Map<String, dynamic>> _notifications = [];
 
@@ -65,29 +146,20 @@ class _ExploreTabState extends State<ExploreTab> {
   final PageController _photoPageController = PageController();
   int _currentPhotoPage = 0;
 
-  final List<String> _locationDatabase = [
-    'Bali, Indonesia',
-    'Barcelona, Spain',
-    'Kyoto, Japan',
-    'Santorini, Greece',
-    'Marrakech, Morocco',
-    'Banff, Canada',
-    'Reykjavík, Iceland',
-    'Phuket, Thailand',
-    'Paris, France',
-    'Rome, Italy',
-    'New York, USA',
-  ];
-
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedWeek = _weeks[((now.day - 1) ~/ 7).clamp(0, 3)];
+    _selectedMonth = _months[now.month - 1];
+    _selectedYear = '${now.year}';
+    TravelerRepository.tripsRevision.addListener(_loadMyTrips);
     _loadTravelers();
     _loadNotifications();
+    _loadMyTrips();
   }
 
-  /// Loads the discover feed from the database. In "Going to..." mode only
-  /// travellers heading to / living in the chosen place are returned.
+  /// Loads the discover feed from the database (closest first).
   Future<void> _loadTravelers() async {
     final token = ++_loadToken;
     setState(() {
@@ -95,9 +167,7 @@ class _ExploreTabState extends State<ExploreTab> {
       _loadFailed = false;
     });
     try {
-      final list = await _repo.discover(
-        destination: _isNearMe ? null : _selectedLocation?.split(',').first.trim(),
-      );
+      final list = await _repo.discover();
       if (!mounted || token != _loadToken) return;
       setState(() {
         _travelers = list;
@@ -201,45 +271,142 @@ class _ExploreTabState extends State<ExploreTab> {
 
   @override
   void dispose() {
+    TravelerRepository.tripsRevision.removeListener(_loadMyTrips);
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _photoPageController.dispose();
     super.dispose();
   }
 
+  // ── "Going to…" search ─────────────────────────────────────────────────────
+
   void _onSearchChanged(String val) {
+    _searchDebounce?.cancel();
+    final token = ++_searchToken;
+    final q = val.trim();
     setState(() {
       _query = val;
-      if (val.isEmpty) {
-        _suggestions = [];
-      } else {
-        _suggestions = _locationDatabase
-            .where((loc) => loc.toLowerCase().contains(val.toLowerCase()))
-            .toList();
-      }
+      _searchDone = false;
+      _searching = q.length >= 2;
+      if (q.length < 2) _placeResults = [];
+    });
+    if (q.length < 2) return;
+    // Debounced: one request after the user pauses typing (the free geocoder
+    // asks apps not to fire a request per keystroke).
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final results = await LocationService.instance.searchDestinations(q);
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _placeResults = results;
+        _searching = false;
+        _searchDone = true;
+      });
     });
   }
 
-  void _selectSuggestion(String suggestion) {
+  void _selectPlace(PlaceResult place) {
+    _searchDebounce?.cancel();
+    _searchToken++;
     setState(() {
-      _selectedLocation = suggestion;
-      _searchController.text = suggestion;
-      _query = suggestion;
-      _suggestions = [];
+      _destLabel = place.label;
+      _destLat = place.lat;
+      _destLng = place.lng;
+      _searchController.text = place.label;
+      _query = place.label;
+      _placeResults = [];
+      _searching = false;
+      _searchDone = false;
       _searchFocusNode.unfocus();
     });
-    _loadTravelers();
+    _loadGoing();
+  }
+
+  /// Tapping one of my saved trips searches that place + those dates.
+  void _selectMyTrip(Trip trip) {
+    _searchDebounce?.cancel();
+    _searchToken++;
+    setState(() {
+      _destLabel = trip.destination;
+      _destLat = trip.lat;
+      _destLng = trip.lng;
+      _selectedWeek = trip.week;
+      _selectedMonth = trip.month;
+      _selectedYear = trip.year;
+      _searchController.text = trip.destination;
+      _query = trip.destination;
+      _placeResults = [];
+      _searching = false;
+      _searchDone = false;
+      _searchFocusNode.unfocus();
+    });
+    _loadGoing();
   }
 
   void _clearSearch() {
-    final hadLocation = _selectedLocation != null;
+    _searchDebounce?.cancel();
+    _searchToken++;
+    _goingToken++;
     setState(() {
-      _selectedLocation = null;
+      _destLabel = null;
+      _destLat = null;
+      _destLng = null;
       _searchController.clear();
       _query = '';
-      _suggestions = [];
+      _placeResults = [];
+      _searching = false;
+      _searchDone = false;
+      _going = const [];
+      _loadingGoing = false;
+      _goingFailed = false;
     });
-    if (hadLocation) _loadTravelers();
+  }
+
+  Future<void> _loadMyTrips() async {
+    try {
+      final trips = await _repo.myTrips();
+      if (mounted) setState(() => _myTrips = trips);
+    } catch (_) {
+      // Offline: keep what we have.
+    }
+  }
+
+  /// Everyone else going to the chosen place, best date match first.
+  Future<void> _loadGoing() async {
+    final label = _destLabel;
+    if (label == null) return;
+    if (_selectedDatesInPast) {
+      _goingToken++;
+      setState(() {
+        _going = const [];
+        _loadingGoing = false;
+        _goingFailed = false;
+      });
+      return;
+    }
+    final token = ++_goingToken;
+    setState(() {
+      _loadingGoing = true;
+      _goingFailed = false;
+    });
+    try {
+      final list = await _repo.goingTo(
+        destination: label,
+        lat: _destLat,
+        lng: _destLng,
+        week: _selectedWeek,
+        month: _selectedMonth,
+        year: _selectedYear,
+      );
+      if (!mounted || token != _goingToken) return;
+      setState(() => _going = list);
+    } catch (_) {
+      if (mounted && token == _goingToken) setState(() => _goingFailed = true);
+    } finally {
+      if (mounted && token == _goingToken) {
+        setState(() => _loadingGoing = false);
+      }
+    }
   }
 
   List<Traveler> get _filteredTravelers => _travelers;
@@ -253,19 +420,29 @@ class _ExploreTabState extends State<ExploreTab> {
   Future<void> _nextProfile(String action) async {
     final traveler = _currentTraveler;
     if (traveler == null) return;
-
     final kind = switch (action) {
       'like' => SwipeKind.like,
       'save' => SwipeKind.save,
       _ => SwipeKind.pass,
     };
+    await _swipeTraveler(traveler, kind);
+  }
 
-    // Move on immediately; the write happens in the background.
+  /// Like / pass / save from the swipe card or from the "Going to…" list. The
+  /// person disappears from both lists straight away; the write happens in the
+  /// background and is rolled back if it fails.
+  Future<void> _swipeTraveler(Traveler traveler, SwipeKind kind) async {
+    final feedIdx = _travelers.indexWhere((t) => t.id == traveler.id);
+    final goingIdx = _going.indexWhere((t) => t.id == traveler.id);
+
     setState(() {
-      _travelers = List.of(_travelers)..removeAt(_currentProfileIndex);
-      if (_currentProfileIndex >= _travelers.length) _currentProfileIndex = 0;
-      _currentPhotoPage = 0;
-      if (_photoPageController.hasClients) _photoPageController.jumpToPage(0);
+      if (feedIdx >= 0) {
+        _travelers = List.of(_travelers)..removeAt(feedIdx);
+        if (_currentProfileIndex >= _travelers.length) _currentProfileIndex = 0;
+        _currentPhotoPage = 0;
+        if (_photoPageController.hasClients) _photoPageController.jumpToPage(0);
+      }
+      if (goingIdx >= 0) _going = List.of(_going)..removeAt(goingIdx);
     });
 
     final messenger = ScaffoldMessenger.of(context);
@@ -291,7 +468,16 @@ class _ExploreTabState extends State<ExploreTab> {
     } catch (_) {
       if (!mounted) return;
       // Put the card back so nothing is silently lost.
-      setState(() => _travelers = [traveler, ..._travelers]);
+      setState(() {
+        if (feedIdx >= 0) {
+          _travelers = List.of(_travelers)
+            ..insert(feedIdx.clamp(0, _travelers.length), traveler);
+        }
+        if (goingIdx >= 0) {
+          _going = List.of(_going)
+            ..insert(goingIdx.clamp(0, _going.length), traveler);
+        }
+      });
       messenger.showSnackBar(const SnackBar(
         content: Text('Could not save that. Check your connection.'),
       ));
@@ -299,16 +485,28 @@ class _ExploreTabState extends State<ExploreTab> {
   }
 
   Future<void> _saveTrip() async {
-    final place = _selectedLocation;
-    if (place == null) return;
+    final place = _destLabel;
+    if (place == null || _savingTrip) return;
     final messenger = ScaffoldMessenger.of(context);
+    if (_selectedDatesInPast) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Pick dates that are still ahead of you.')),
+      );
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    setState(() => _savingTrip = true);
     try {
       await _repo.saveTrip(
         destination: place,
+        lat: _destLat,
+        lng: _destLng,
         week: _selectedWeek,
         month: _selectedMonth,
         year: _selectedYear,
       );
+      // The profile shows my next trip, so pull the fresh copy.
+      unawaited(auth.refreshCurrentUser());
       messenger.showSnackBar(SnackBar(
         backgroundColor: Colors.green.shade600,
         content: Text(
@@ -320,6 +518,8 @@ class _ExploreTabState extends State<ExploreTab> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not save the trip. Check your connection.')),
       );
+    } finally {
+      if (mounted) setState(() => _savingTrip = false);
     }
   }
 
@@ -333,7 +533,8 @@ class _ExploreTabState extends State<ExploreTab> {
   }
 
   void _showDateSelectionDialog(BuildContext context) {
-    showModalBottomSheet(
+    final messenger = ScaffoldMessenger.of(context);
+    showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -361,12 +562,7 @@ class _ExploreTabState extends State<ExploreTab> {
                         child: _DatePickerDropdown(
                           label: 'Week',
                           value: _selectedWeek,
-                          items: const [
-                            '1st Week',
-                            '2nd Week',
-                            '3rd Week',
-                            '4th Week'
-                          ],
+                          items: _weeks,
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _selectedWeek = val);
@@ -381,20 +577,7 @@ class _ExploreTabState extends State<ExploreTab> {
                         child: _DatePickerDropdown(
                           label: 'Month',
                           value: _selectedMonth,
-                          items: const [
-                            'Jan',
-                            'Feb',
-                            'Mar',
-                            'Apr',
-                            'May',
-                            'Jun',
-                            'Jul',
-                            'Aug',
-                            'Sep',
-                            'Oct',
-                            'Nov',
-                            'Dec'
-                          ],
+                          items: _months,
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _selectedMonth = val);
@@ -409,7 +592,12 @@ class _ExploreTabState extends State<ExploreTab> {
                         child: _DatePickerDropdown(
                           label: 'Year',
                           value: _selectedYear,
-                          items: const ['2026', '2027', '2028'],
+                          items: [
+                            for (var y = DateTime.now().year;
+                                y <= DateTime.now().year + 2;
+                                y++)
+                              '$y',
+                          ],
                           onChanged: (val) {
                             if (val != null) {
                               setState(() => _selectedYear = val);
@@ -445,7 +633,15 @@ class _ExploreTabState extends State<ExploreTab> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      if (!mounted || _destLabel == null) return;
+      if (_selectedDatesInPast) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Pick dates that are still ahead of you.')),
+        );
+      }
+      _loadGoing();
+    });
   }
 
   void _showNotifications(BuildContext context) {
@@ -658,14 +854,8 @@ class _ExploreTabState extends State<ExploreTab> {
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          setState(() {
-                            _isNearMe = true;
-                            _selectedLocation = null;
-                            _searchController.clear();
-                            _query = '';
-                            _suggestions = [];
-                          });
-                          _loadTravelers();
+                          setState(() => _isNearMe = true);
+                          if (_travelers.isEmpty || _loadFailed) _loadTravelers();
                         },
                         child: Center(
                           child: Text(
@@ -684,10 +874,9 @@ class _ExploreTabState extends State<ExploreTab> {
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          setState(() {
-                            _isNearMe = false;
-                          });
-                          _loadTravelers();
+                          setState(() => _isNearMe = false);
+                          _loadMyTrips();
+                          if (_destLabel != null) _loadGoing();
                         },
                         child: Center(
                           child: Text(
@@ -709,234 +898,669 @@ class _ExploreTabState extends State<ExploreTab> {
           ),
         ),
 
-        // ── Search Bar & Date Dropdown Area (Only visible in 'Going to...' tab) ──
-        if (!_isNearMe)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Column(
-              children: [
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          onChanged: _onSearchChanged,
-                          decoration: InputDecoration(
-                            hintText: 'Search destinations...',
-                            prefixIcon: const Icon(Icons.search,
-                                color: AppColors.accent),
-                            suffixIcon: _query.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: _clearSearch,
-                                  )
-                                : null,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Date Selector (stretching to same height as search bar)
-                      GestureDetector(
-                        onTap: () => _showDateSelectionDialog(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.darkCard
-                                : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark ? Colors.white10 : Colors.black12,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.calendar_today,
-                                  size: 14, color: AppColors.accent),
-                              const SizedBox(width: 6),
-                              Text(
-                                _getFormattedDateCompact(),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_suggestions.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _suggestions.length,
-                      itemBuilder: (context, idx) {
-                        final item = _suggestions[idx];
-                        return ListTile(
-                          leading: const Icon(Icons.location_on_outlined,
-                              color: AppColors.primary),
-                          title: Text(item),
-                          onTap: () => _selectSuggestion(item),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ).animate().fadeIn(duration: 300.ms),
+        // Feed = swipe cards. Going to… = scrollable list (search, my trips, everyone
+        // else going to the same place / dates).
+        Expanded(
+          child: _isNearMe
+              ? _buildFeed(textSecColor)
+              : _buildGoingTo(isDark, cardColor, primaryPeach, textSecColor),
+        ),
+      ],
+    );
+  }
 
-        // Popular Active Destinations list (Only visible when Going to... and no place is searched yet)
-        if (!_isNearMe && _selectedLocation == null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Popular Active Destinations',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 120,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _DestinationCard(
-                        name: 'Bali',
-                        image:
-                            'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=400&q=80',
-                        onTap: () => _selectSuggestion('Bali, Indonesia'),
-                      ),
-                      _DestinationCard(
-                        name: 'Barcelona',
-                        image:
-                            'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=400&q=80',
-                        onTap: () => _selectSuggestion('Barcelona, Spain'),
-                      ),
-                      _DestinationCard(
-                        name: 'Kyoto',
-                        image:
-                            'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=400&q=80',
-                        onTap: () => _selectSuggestion('Kyoto, Japan'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+  // ── Feed (single swipe card) ────────────────────────────────────────────────
+
+  Widget _buildFeed(Color textSecColor) {
+    if (_loadingTravelers) {
+      return const Center(
+        child: RovloLoader(
+          size: 96,
+          messages: [
+            'Finding travellers near you…',
+            'Meeting your next travel buddy…',
+          ],
+        ),
+      );
+    }
+    if (_loadFailed) {
+      return Center(
+        child: TextButton.icon(
+          onPressed: _loadTravelers,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Could not load travellers. Tap to retry'),
+        ),
+      );
+    }
+    final traveler = _currentTraveler;
+    if (traveler == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            "You're all caught up! New travellers will show up here as they join.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: textSecColor),
           ),
+        ),
+      );
+    }
+    return _ProfileCard(
+      key: ValueKey(_currentProfileIndex),
+      traveler: traveler,
+      photoPageController: _photoPageController,
+      currentPhotoPage: _currentPhotoPage,
+      onPhotoPageChanged: (i) => setState(() => _currentPhotoPage = i),
+      onReject: () => _nextProfile('reject'),
+      onLike: () => _nextProfile('like'),
+      onSave: () => _nextProfile('save'),
+      onTapProfile: () => _openTravelerProfile(traveler),
+    );
+  }
 
-        // Save Trip option (Only visible when Going to... and a place has been selected/searched)
-        if (!_isNearMe && _selectedLocation != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: InkWell(
-              onTap: _saveTrip,
+  // ── Going to… ───────────────────────────────────────────────────────────────
+
+  static const _popularImages = [
+    'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=400&q=80',
+    'https://images.unsplash.com/photo-1539650116574-8efeb43e2750?auto=format&fit=crop&w=400&q=80',
+    'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=400&q=80',
+  ];
+
+  Widget _buildGoingTo(
+    bool isDark,
+    Color cardColor,
+    Color primaryPeach,
+    Color textSecColor,
+  ) {
+    final hasDest = _destLabel != null;
+    final destShort = _destLabel?.split(',').first.trim() ?? '';
+    final typed = _query.trim().length >= 2;
+    final showNoPlaces = typed && _searchDone && _placeResults.isEmpty && !hasDest;
+    final headerStyle = TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.bold,
+      color: isDark ? Colors.white70 : Colors.black54,
+    );
+
+    final children = <Widget>[
+      // Search + date
+      IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search any city, island or country…',
+                  prefixIcon: const Icon(Icons.search, color: AppColors.accent),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : _query.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: _clearSearch,
+                            )
+                          : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Date selector (same height as the search bar)
+            GestureDetector(
+              onTap: () => _showDateSelectionDialog(context),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: primaryPeach.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border:
-                      Border.all(color: primaryPeach.withValues(alpha: 0.3)),
+                  color: isDark ? AppColors.darkCard : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.white10 : Colors.black12,
+                  ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.bookmark_add, color: primaryPeach),
-                    const SizedBox(width: 8),
+                    const Icon(Icons.calendar_today,
+                        size: 14, color: AppColors.accent),
+                    const SizedBox(width: 6),
                     Text(
-                      'Save this Trip to My Profile',
+                      _getFormattedDateCompact(),
                       style: TextStyle(
-                        color: isDark
-                            ? AppColors.secondary
-                            : AppColors.primaryDark,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ).animate().fadeIn(duration: 200.ms),
+          ],
+        ),
+      ),
 
-        // ── Single Profile Card / Result List ───────────────────────────────────
-        Expanded(
-          child: _loadingTravelers
-              ? Center(
-                  child: RovloLoader(
-                    size: 96,
-                    messages: [
-                      _isNearMe ? 'Finding travellers near you…' : 'Finding travellers going there…',
-                      'Meeting your next travel buddy…',
-                    ],
-                  ),
-                )
-              : _loadFailed
-                  ? Center(
-                      child: TextButton.icon(
-                        onPressed: _loadTravelers,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Could not load travellers. Tap to retry'),
-                      ),
-                    )
-                  : _currentTraveler == null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              _isNearMe
-                                  ? "You're all caught up! New travellers will show up here as they join."
-                                  : 'No travellers heading to this place yet.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: textSecColor),
-                            ),
-                          ),
-                        )
-                      : _ProfileCard(
-                  key: ValueKey(_currentProfileIndex),
-                  traveler: _currentTraveler!,
-                  photoPageController: _photoPageController,
-                  currentPhotoPage: _currentPhotoPage,
-                  onPhotoPageChanged: (i) =>
-                      setState(() => _currentPhotoPage = i),
-                  onReject: () => _nextProfile('reject'),
-                  onLike: () => _nextProfile('like'),
-                  onSave: () => _nextProfile('save'),
-                  onTapProfile: () => _openTravelerProfile(_currentTraveler!),
+      // Place suggestions (from the free geocoder)
+      if (_placeResults.isNotEmpty)
+        Container(
+          margin: const EdgeInsets.only(top: 4),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              for (final place in _placeResults)
+                ListTile(
+                  leading: const Icon(Icons.location_on_outlined,
+                      color: AppColors.primary),
+                  title: Text(place.title ?? place.name),
+                  subtitle: (place.subtitle ?? '').isEmpty
+                      ? null
+                      : Text(place.subtitle!),
+                  onTap: () => _selectPlace(place),
                 ),
+            ],
+          ),
+        ),
+      if (showNoPlaces)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(
+            'No places found for “${_query.trim()}”. Try another spelling.',
+            style: TextStyle(color: textSecColor),
+          ),
+        ),
+
+      // My saved trips (also shown on my profile)
+      if (_myTrips.isNotEmpty && _placeResults.isEmpty) ...[
+        const SizedBox(height: 16),
+        Text('Your trips', style: headerStyle),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final trip in _myTrips)
+              _TripChip(
+                trip: trip,
+                selected: hasDest &&
+                    _sameDestination(trip) &&
+                    trip.week == _selectedWeek &&
+                    trip.month == _selectedMonth &&
+                    trip.year == _selectedYear,
+                onTap: () => _selectMyTrip(trip),
+              ),
+          ],
         ),
       ],
+
+      // Nothing searched yet → popular places
+      if (!hasDest && _placeResults.isEmpty && !showNoPlaces) ...[
+        const SizedBox(height: 20),
+        Text('Popular Active Destinations', style: headerStyle),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 120,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (var i = 0; i < _popular.length; i++)
+                _DestinationCard(
+                  name: _popular[i].title ?? _popular[i].name,
+                  image: _popularImages[i],
+                  onTap: () => _selectPlace(_popular[i]),
+                ),
+            ],
+          ),
+        ),
+      ],
+
+      // A place is chosen → save it + everyone else going there
+      if (hasDest && _placeResults.isEmpty) ...[
+        const SizedBox(height: 14),
+        _buildTripCard(isDark, primaryPeach),
+        const SizedBox(height: 20),
+        if (_selectedDatesInPast)
+          Text(
+            'That week has already passed. Pick dates that are still ahead of you.',
+            style: TextStyle(color: textSecColor),
+          )
+        else if (_loadingGoing)
+          const Padding(
+            padding: EdgeInsets.only(top: 24),
+            child: Center(
+              child: RovloLoader(
+                size: 72,
+                messages: [
+                  'Finding travellers going there…',
+                  'Meeting your next travel buddy…',
+                ],
+              ),
+            ),
+          )
+        else if (_goingFailed)
+          Center(
+            child: TextButton.icon(
+              onPressed: _loadGoing,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Could not load travellers. Tap to retry'),
+            ),
+          )
+        else if (_going.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'Nobody else is going to $destShort yet. Save your trip and you\'ll '
+              'show up for everyone heading there.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: textSecColor),
+            ),
+          )
+        else ...[
+          Text(
+            '${_going.length} ${_going.length == 1 ? 'traveller' : 'travellers'} going to $destShort',
+            style: headerStyle,
+          ),
+          for (var i = 0; i < _going.length; i++) ...[
+            if (i == 0 || _going[i].dateMatch != _going[i - 1].dateMatch)
+              Padding(
+                padding: const EdgeInsets.only(top: 14, bottom: 2),
+                child: Text(
+                  switch (_going[i].dateMatch) {
+                    'same' => 'Same dates · $_selectedTravelDate',
+                    'near' => 'Around your dates (within a month)',
+                    _ => 'Later trips to $destShort',
+                  },
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                    color: primaryPeach,
+                  ),
+                ),
+              ),
+            _GoingCard(
+              key: ValueKey(_going[i].id),
+              traveler: _going[i],
+              onTap: () => _openTravelerProfile(_going[i]),
+              onPass: () => _swipeTraveler(_going[i], SwipeKind.pass),
+              onSave: () => _swipeTraveler(_going[i], SwipeKind.save),
+              onLike: () => _swipeTraveler(_going[i], SwipeKind.like),
+            ),
+          ],
+        ],
+      ],
+    ];
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await Future.wait([
+          _loadMyTrips(),
+          if (hasDest) _loadGoing(),
+        ]);
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+        children: children,
+      ),
+    );
+  }
+
+  /// "Bali, Indonesia · 2nd Week, Oct 2026" + Save button (or the saved state).
+  Widget _buildTripCard(bool isDark, Color primaryPeach) {
+    final saved = _tripAlreadySaved;
+    final destShort = _destLabel?.split(',').first.trim() ?? '';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: primaryPeach.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: primaryPeach.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.flight_takeoff_rounded, color: primaryPeach, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _destLabel ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: Text(
+              _selectedTravelDate,
+              style: TextStyle(
+                fontSize: 13,
+                color: context.rovlo.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (saved)
+            Row(
+              children: [
+                Icon(Icons.check_circle_rounded,
+                    color: Colors.green.shade500, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'On your profile — travellers going to $destShort can find you.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                onPressed: (_savingTrip || _selectedDatesInPast) ? null : _saveTrip,
+                icon: _savingTrip
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.bookmark_add, color: Colors.white, size: 18),
+                label: const Text(
+                  'Save this Trip to My Profile',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryPeach,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── "Going to…" list widgets ────────────────────────────────────────────────
+
+class _TripChip extends StatelessWidget {
+  const _TripChip({
+    required this.trip,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Trip trip;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? primary.withValues(alpha: 0.18)
+              : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? primary : (isDark ? Colors.white12 : Colors.black12),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.flight_takeoff_rounded, size: 14, color: primary),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                '${trip.destination.split(',').first.trim()} · ${trip.month} ${trip.week.replaceAll(' Week', 'W')}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One traveller in the "Going to…" list.
+class _GoingCard extends StatelessWidget {
+  const _GoingCard({
+    super.key,
+    required this.traveler,
+    required this.onTap,
+    required this.onPass,
+    required this.onSave,
+    required this.onLike,
+  });
+
+  final Traveler traveler;
+  final VoidCallback onTap;
+  final VoidCallback onPass;
+  final VoidCallback onSave;
+  final VoidCallback onLike;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = isDark ? AppColors.primaryVibrantDark : AppColors.primary;
+    final cardColor = isDark ? AppColors.darkCard : AppColors.lightCard;
+    final textSec = context.rovlo.textSecondary;
+    final about = traveler.about.isNotEmpty ? traveler.about : traveler.description;
+
+    final (badgeText, badgeColor) = switch (traveler.dateMatch) {
+      'same' => ('Same dates', Colors.green.shade500),
+      'near' => ('Near your dates', Colors.orange.shade600),
+      _ => ('Later trip', Colors.blueGrey.shade400),
+    };
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.05),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: 88,
+                height: 118,
+                child: CachedNetworkImage(
+                  imageUrl: traveler.imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: primary.withValues(alpha: 0.10)),
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.person, size: 40, color: Colors.white70),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          traveler.nameWithAge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      if (traveler.isVerified) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.verified_rounded, size: 16, color: primary),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: badgeColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: badgeColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (traveler.dateRange.isNotEmpty)
+                    Row(
+                      children: [
+                        Icon(Icons.event_rounded, size: 13, color: textSec),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            traveler.dateRange,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12.5, color: textSec),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (traveler.distanceLabel.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(Icons.near_me_rounded, size: 13, color: textSec),
+                        const SizedBox(width: 4),
+                        Text(
+                          traveler.distanceLabel,
+                          style: TextStyle(fontSize: 12.5, color: textSec),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (about.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      about,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, height: 1.3, color: textSec),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      _ActionButton(
+                        icon: Icons.close_rounded,
+                        color: Colors.red.shade400,
+                        size: 36,
+                        iconSize: 18,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          onPass();
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      _ActionButton(
+                        icon: Icons.bookmark_rounded,
+                        color: const Color(0xFF2196F3),
+                        size: 36,
+                        iconSize: 17,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          onSave();
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      _ActionButton(
+                        icon: Icons.favorite_rounded,
+                        color: primary,
+                        size: 42,
+                        iconSize: 20,
+                        isPrimary: true,
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          onLike();
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1103,9 +1727,9 @@ class _ProfileCard extends StatelessWidget {
                     // Photo progress segments
                     if (_images.length > 1)
                       Positioned(
-                        top: 12,
-                        left: 16,
-                        right: 16,
+                        top: 10,
+                        left: 8,
+                        right: 8,
                         child: Row(
                           children: List.generate(_images.length, (i) {
                             return Expanded(
@@ -1127,9 +1751,9 @@ class _ProfileCard extends StatelessWidget {
 
                     // Top chips: verified (left) + where/when (right)
                     Positioned(
-                      top: _images.length > 1 ? 28 : 18,
-                      left: 16,
-                      right: 16,
+                      top: _images.length > 1 ? 24 : 10,
+                      left: 8,
+                      right: 8,
                       child: Row(
                         children: [
                           if (traveler.isVerified)

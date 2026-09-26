@@ -1,8 +1,10 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
-import '../../core/widgets/keyboard_inset.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
@@ -72,25 +74,25 @@ class RovloPlusScreen extends StatelessWidget {
             ).animate().fadeIn().slideY(begin: 0.1),
             const SizedBox(height: 28),
 
-            // Free Tier
+            // Free
             _PlanCard(
               title: 'Free',
-              subtitle: '🎁 Basic Traveler Access',
+              subtitle: '🎁 Everything you need to start',
               price: '₹0',
               period: 'forever',
               features: const [
                 'Basic profile',
-                'View nearby travelers',
-                'Limited messages per day',
+                'See travelers on the map',
+                'Chat with people who accept your request',
                 'Standard map access',
               ],
               isCurrentPlan: currentTier == 'free',
               color: Colors.grey.shade600,
-              onSelect: () => _openPaymentModal(context, provider, 'free', 'Free Plan', 0),
+              onSelect: () {},
             ).animate(delay: 100.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 16),
 
-            // Plus Tier (₹199)
+            // Plus (₹199)
             _PlanCard(
               title: 'Plus',
               price: '₹199',
@@ -98,20 +100,20 @@ class RovloPlusScreen extends StatelessWidget {
               features: const [
                 'Everything in Free',
                 'Priority matching',
-                'Read receipts in chats',
                 'See who liked you',
                 'Advanced filters',
               ],
               isCurrentPlan: currentTier == 'plus199',
+              comingSoon: !AppConstants.paymentsEnabled && currentTier != 'plus199',
               color: primaryPeach,
               isPopular: true,
-              onSelect: () => _openPaymentModal(context, provider, 'plus199', 'Plus Tier', 199),
+              onSelect: () => _openPaymentModal(context, provider, 'plus199', 'Plus', 199),
             ).animate(delay: 200.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 16),
 
-            // Premium Tier (₹499 / mo)
+            // Advanced (₹499)
             _PlanCard(
-              title: 'Premium VIP',
+              title: 'Advanced',
               price: '₹499',
               period: '/month',
               features: const [
@@ -123,8 +125,11 @@ class RovloPlusScreen extends StatelessWidget {
                 'Ad-free experience',
               ],
               isCurrentPlan: currentTier == 'plus499' || currentTier == 'plus299',
+              comingSoon: !AppConstants.paymentsEnabled &&
+                  currentTier != 'plus499' &&
+                  currentTier != 'plus299',
               color: Colors.amber.shade700,
-              onSelect: () => _openPaymentModal(context, provider, 'plus499', 'Premium VIP Tier', 499),
+              onSelect: () => _openPaymentModal(context, provider, 'plus499', 'Advanced', 499),
             ).animate(delay: 300.ms).fadeIn().slideX(begin: 0.1),
             const SizedBox(height: 24),
           ],
@@ -140,6 +145,12 @@ class RovloPlusScreen extends StatelessWidget {
     String planName,
     int amount,
   ) {
+    if (!AppConstants.paymentsEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paid plans are coming soon. ⭐')),
+      );
+      return;
+    }
     if (amount == 0) {
       provider.setSubscriptionTier('free');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -161,200 +172,6 @@ class RovloPlusScreen extends StatelessWidget {
   }
 }
 
-class _PaymentModal extends StatefulWidget {
-  final String planName;
-  final int amount;
-  final VoidCallback onPaymentSuccess;
-
-  const _PaymentModal({
-    required this.planName,
-    required this.amount,
-    required this.onPaymentSuccess,
-  });
-
-  @override
-  State<_PaymentModal> createState() => _PaymentModalState();
-}
-
-class _PaymentModalState extends State<_PaymentModal> {
-  String _selectedMethod = 'upi';
-  final _upiController = TextEditingController(text: 'traveler@upi');
-  final _cardNumberController = TextEditingController(text: '4532 •••• •••• 8892');
-  bool _processing = false;
-
-  @override
-  void dispose() {
-    _upiController.dispose();
-    _cardNumberController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _payNow() async {
-    setState(() => _processing = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) return;
-    widget.onPaymentSuccess();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: KeyboardInset.of(context) + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Complete Payment',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  widget.planName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                Text(
-                  '₹${widget.amount} / month',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Select Payment Method',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
-          const SizedBox(height: 12),
-
-          // Payment Options
-          RadioListTile<String>(
-            value: 'upi',
-            groupValue: _selectedMethod,
-            onChanged: (val) => setState(() => _selectedMethod = val!),
-            title: const Row(
-              children: [
-                Icon(Icons.qr_code_2, color: Colors.purple),
-                SizedBox(width: 10),
-                Text('UPI (GPay / PhonePe / Paytm)', style: TextStyle(fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          if (_selectedMethod == 'upi')
-            Padding(
-              padding: const EdgeInsets.only(left: 48, right: 16, bottom: 12),
-              child: TextField(
-                controller: _upiController,
-                decoration: const InputDecoration(
-                  labelText: 'UPI ID',
-                  hintText: 'username@upi',
-                  prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                ),
-              ),
-            ),
-
-          RadioListTile<String>(
-            value: 'card',
-            groupValue: _selectedMethod,
-            onChanged: (val) => setState(() => _selectedMethod = val!),
-            title: const Row(
-              children: [
-                Icon(Icons.credit_card, color: Colors.blue),
-                SizedBox(width: 10),
-                Text('Credit / Debit Card', style: TextStyle(fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          if (_selectedMethod == 'card')
-            Padding(
-              padding: const EdgeInsets.only(left: 48, right: 16, bottom: 12),
-              child: TextField(
-                controller: _cardNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'Card Number',
-                  prefixIcon: Icon(Icons.payment),
-                ),
-              ),
-            ),
-
-          RadioListTile<String>(
-            value: 'netbanking',
-            groupValue: _selectedMethod,
-            onChanged: (val) => setState(() => _selectedMethod = val!),
-            title: const Row(
-              children: [
-                Icon(Icons.account_balance, color: Colors.green),
-                SizedBox(width: 10),
-                Text('Net Banking', style: TextStyle(fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: _processing ? null : _payNow,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: _processing
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                    )
-                  : Text(
-                      'Pay ₹${widget.amount} & Activate',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PlanCard extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -365,6 +182,7 @@ class _PlanCard extends StatelessWidget {
   final bool isCurrentPlan;
   final Color color;
   final bool isPopular;
+  final bool comingSoon;
   final VoidCallback onSelect;
 
   const _PlanCard({
@@ -377,6 +195,7 @@ class _PlanCard extends StatelessWidget {
     required this.isCurrentPlan,
     required this.color,
     this.isPopular = false,
+    this.comingSoon = false,
     required this.onSelect,
   });
 
@@ -384,7 +203,7 @@ class _PlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Stack(
+    final card = Stack(
       children: [
         Container(
           width: double.infinity,
@@ -537,6 +356,49 @@ class _PlanCard extends StatelessWidget {
               ),
             ),
           ),
+      ],
+    );
+
+    if (!comingSoon) return card;
+
+    // Paid plans that are not on sale yet: slightly blurred, not tappable.
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(
+          opacity: 0.7,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 2.4, sigmaY: 2.4),
+            child: IgnorePointer(child: card),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.black.withValues(alpha: 0.72) : Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: color, width: 1.6),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 14),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_clock, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(
+                'COMING SOON',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  fontSize: 14,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

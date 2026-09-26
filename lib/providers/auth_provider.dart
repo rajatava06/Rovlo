@@ -383,6 +383,20 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Saves only the city / district name (no coordinates) — used by the Hotlist.
+  Future<void> updateCity(String? city) async {
+    final u = _currentUser;
+    final c = city?.trim() ?? '';
+    if (u == null || c.isEmpty || c == u.city) return;
+    try {
+      await _users.patch(u.id, {'city': c});
+      _currentUser = u.copyWith(city: c);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AuthProvider] city update failed: $e');
+    }
+  }
+
   /// Ghost mode hides me from the map and removes my stored coordinates.
   Future<void> setGhostMode(bool enabled) async {
     final u = _currentUser;

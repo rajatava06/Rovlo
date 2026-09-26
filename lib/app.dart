@@ -40,6 +40,12 @@ class RovloApp extends StatelessWidget {
       home: resolving ? const _Splash() : null,
       initialRoute: resolving ? null : initialRoute,
       onGenerateRoute: resolving ? null : Routes.onGenerateRoute,
+      // By default Flutter expands "/home" into ["/", "/home"], which puts the
+      // Welcome / sign-in screen *underneath* Home — pressing Back on Home then
+      // landed on the sign-in page. Start with exactly one route instead.
+      onGenerateInitialRoutes: resolving
+          ? null
+          : (String name) => [Routes.onGenerateRoute(RouteSettings(name: name))],
       builder: (context, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         return AnnotatedRegion<SystemUiOverlayStyle>(

@@ -14,7 +14,11 @@ import '../../providers/auth_provider.dart';
 import '../profile/verify_screen.dart';
 import '../profile/rovlo_plus_screen.dart';
 import '../profile/emergency_contacts_screen.dart';
+import '../profile/sos_screen.dart';
+import 'my_trips_section.dart';
 import 'saved_tab.dart';
+import '../settings/help_support_screen.dart';
+import '../settings/notifications_screen.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -240,9 +244,10 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _triggerSOS(BuildContext context) {
+    final user = context.read<AuthProvider>().currentUser;
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(
@@ -256,31 +261,35 @@ class _ProfileTabState extends State<ProfileTab> {
             ],
           ),
           content: const Text(
-            'This will share your location with authorities and nearby travelers. Do you wish to trigger the SOS alert?',
+            'This starts a LOUD alarm, finds your exact location, and lets you call '
+            'the emergency number and text your location to your emergency contacts.\n\n'
+            'Use it only in a real emergency.',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Colors.red,
-                    content: Text(
-                      '🚨 Simulated Alert Sent! Location shared with emergency services.',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                Navigator.pop(dialogContext);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => SosScreen(
+                      userName: user?.displayName ?? '',
+                      contacts: user?.emergencyContacts ?? const [],
                     ),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
+                minimumSize: const Size(0, 44),
               ),
               child: const Text(
-                'TRIGGER SOS',
+                'START SOS',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
@@ -740,6 +749,9 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
 
+          // Trips saved from Discover → Going to…
+          const MyTripsSection(),
+
           // About / Bio section
           const _SectionLabel('About Me'),
           const SizedBox(height: 10),
@@ -855,7 +867,10 @@ class _ProfileTabState extends State<ProfileTab> {
             icon: Icons.star_rounded,
             label: 'Rovlo Plus',
             highlight: true,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RovloPlusScreen())),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RovloPlusScreen()),
+            ),
           ),
           _MenuTile(
             icon: Icons.contact_phone_outlined,
@@ -870,12 +885,12 @@ class _ProfileTabState extends State<ProfileTab> {
           _MenuTile(
             icon: Icons.notifications_none,
             label: 'Notifications',
-            onTap: () => _soon(context),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
           ),
           _MenuTile(
             icon: Icons.help_outline,
             label: 'Help & support',
-            onTap: () => _soon(context),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpSupportScreen())),
           ),
 
           if (provider.isAdmin) ...[
@@ -949,12 +964,6 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
         ],
       ),
-    );
-  }
-
-  void _soon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Coming soon')),
     );
   }
 

@@ -48,7 +48,12 @@ class LocationService {
     final lat = prefs.getDouble(_prefsLat);
     final lng = prefs.getDouble(_prefsLng);
     if (lat == null || lng == null) return null;
-    return _last = LocationFix(lat: lat, lng: lng, city: prefs.getString(_prefsCity));
+    final saved = prefs.getString(_prefsCity);
+    return _last = LocationFix(
+      lat: lat,
+      lng: lng,
+      city: saved == null ? null : cleanCityName(saved),
+    );
   }
 
   /// Gets the current position. When [prompt] is false no permission dialog is
@@ -99,6 +104,29 @@ class LocationService {
     if (fix.city != null) await prefs.setString(_prefsCity, fix.city!);
   }
 
+  static final RegExp _cityPrefix =
+      RegExp(r'^(city|municipality|district|corporation) of\s+', caseSensitive: false);
+  static final RegExp _citySuffix = RegExp(
+    r'\s+(municipal corporation|municipal council|municipality|metropolitan (city|area|region|corporation)|'
+    r'city corporation|corporation|nagar nigam|nagar palika|mahanagar palika|urban agglomeration|'
+    r'development authority|district|division|tehsil|tahsil|taluk|taluka|mandal|block|city|town|urban|rural)$',
+    caseSensitive: false,
+  );
+
+  /// Boils a place name down to the plain city / district people search for:
+  /// "Bhubaneswar Municipal Corporation" → "Bhubaneswar", "Khordha District" →
+  /// "Khordha". Falls back to the input if nothing would be left.
+  static String cleanCityName(String raw) {
+    var s = raw.replaceAll(RegExp(r'\s*\(.*?\)'), '').trim();
+    s = s.replaceFirst(_cityPrefix, '');
+    String prev;
+    do {
+      prev = s;
+      s = s.replaceFirst(_citySuffix, '').trim();
+    } while (s != prev && s.isNotEmpty);
+    return s.isEmpty ? raw.trim() : s;
+  }
+
   /// Position → city name. Uses the phone's geocoder first, OpenStreetMap
   /// Nominatim as a fallback (some devices ship without a geocoder).
   Future<String?> reverseCity(double lat, double lng) async {
@@ -106,7 +134,7 @@ class LocationService {
       final marks = await placemarkFromCoordinates(lat, lng);
       for (final m in marks) {
         final c = _firstNonEmpty([m.locality, m.subAdministrativeArea, m.administrativeArea]);
-        if (c != null) return c;
+        if (c != null) return cleanCityName(c);
       }
     } catch (_) {/* fall through */}
 
@@ -121,13 +149,14 @@ class LocationService {
       if (res.statusCode == 200) {
         final addr = (jsonDecode(res.body) as Map)['address'] as Map?;
         if (addr != null) {
-          return _firstNonEmpty([
+          final c = _firstNonEmpty([
             addr['city'] as String?,
             addr['town'] as String?,
             addr['village'] as String?,
             addr['county'] as String?,
             addr['state'] as String?,
           ]);
+          return c == null ? null : cleanCityName(c);
         }
       }
     } catch (_) {}
@@ -178,6 +207,65 @@ class LocationService {
     }
   }
 
+  /// Destination search for "Going to…": cities, islands, regions, countries.
+  /// Uses Photon (free, no API key, built for search-as-you-type on OpenStreetMap
+  /// data) and falls back to Nominatim if Photon is unreachable.
+  Future<List<PlaceResult>> searchDestinations(String query) async {
+    final q = query.trim();
+    if (q.length < 2) return const [];
+    try {
+      final res = await http
+          .get(
+            Uri.parse('https://photon.komoot.io/api/'
+                '?limit=8&lang=en&osm_tag=place&q=${Uri.encodeQueryComponent(q)}'),
+            headers: _osmHeaders,
+          )
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final features = (jsonDecode(res.body) as Map)['features'] as List? ?? const [];
+        final seen = <String>{};
+        final out = <PlaceResult>[];
+        for (final f in features) {
+          final props = ((f as Map)['properties'] as Map?) ?? const {};
+          final coords = ((f['geometry'] as Map?)?['coordinates'] as List?) ?? const [];
+          final title = _firstNonEmpty([props['name'] as String?]);
+          if (title == null || coords.length < 2) continue;
+          final state = _firstNonEmpty([props['state'] as String?]);
+          final country = _firstNonEmpty([props['country'] as String?]);
+          final subtitle = [
+            if (state != null && state != title) state,
+            if (country != null && country != title) country,
+          ].join(', ');
+          final place = PlaceResult(
+            name: [title, if (subtitle.isNotEmpty) subtitle].join(', '),
+            city: title,
+            lat: (coords[1] as num).toDouble(),
+            lng: (coords[0] as num).toDouble(),
+            title: title,
+            subtitle: subtitle,
+          );
+          if (seen.add(place.label.toLowerCase())) out.add(place);
+        }
+        return out;
+      }
+    } catch (e) {
+      debugPrint('[LocationService] photon search failed: $e');
+    }
+
+    final fallback = await searchPlaces(q);
+    return [
+      for (final r in fallback)
+        PlaceResult(
+          name: r.name,
+          city: r.city,
+          lat: r.lat,
+          lng: r.lng,
+          title: r.city ?? r.name.split(',').first.trim(),
+          subtitle: r.name.split(',').skip(1).map((e) => e.trim()).where((e) => e.isNotEmpty).toList().reversed.take(1).join(', '),
+        ),
+    ];
+  }
+
   Future<void> openSettings(LocationStatus status) async {
     if (status == LocationStatus.serviceOff) {
       await Geolocator.openLocationSettings();
@@ -193,9 +281,24 @@ class PlaceResult {
     required this.lat,
     required this.lng,
     this.city,
+    this.title,
+    this.subtitle,
   });
   final String name;
   final String? city;
   final double lat;
   final double lng;
+
+  /// Short name ("Bali") and the region/country line ("Indonesia") — set by
+  /// [LocationService.searchDestinations].
+  final String? title;
+  final String? subtitle;
+
+  /// What we store as the trip destination: "Bali, Indonesia".
+  String get label {
+    final t = title;
+    if (t == null || t.isEmpty) return name;
+    final sub = subtitle;
+    return (sub == null || sub.isEmpty) ? t : '$t, $sub';
+  }
 }

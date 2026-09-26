@@ -19,6 +19,8 @@ class Traveler {
     this.latitude,
     this.longitude,
     this.distanceKm,
+    this.dateMatch,
+    this.locationUpdatedAt,
   });
 
   final String id;
@@ -38,6 +40,28 @@ class Traveler {
   final double? longitude;
   final double? distanceKm;
 
+  /// Only set by the "Going to…" search: `same` (their week overlaps mine),
+  /// `near` (within a month) or `later`.
+  final String? dateMatch;
+
+  /// When this person's location was last refreshed (map pins only).
+  final DateTime? locationUpdatedAt;
+
+  /// "just now", "12 min ago", "3 hours ago", "2 days ago" — empty if unknown.
+  String get lastLiveLabel {
+    final at = locationUpdatedAt;
+    if (at == null) return '';
+    final d = DateTime.now().difference(at);
+    if (d.inSeconds < 90) return 'just now';
+    if (d.inMinutes < 60) return '${d.inMinutes} min ago';
+    if (d.inHours < 24) {
+      final h = d.inHours;
+      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
+    }
+    final days = d.inDays;
+    return '$days ${days == 1 ? 'day' : 'days'} ago';
+  }
+
   /// "Julian, 28" — or just "Julian" when the age is unknown.
   String get nameWithAge => age > 0 ? '$name, $age' : name;
 
@@ -51,7 +75,7 @@ class Traveler {
   static String avatarFallback(String seed) =>
       'https://api.dicebear.com/7.x/initials/png?seed=${Uri.encodeComponent(seed)}';
 
-  /// Builds a traveller from a database row. Works for all three RPCs — fields
+  /// Builds a traveller from a database row. Works for all the traveller RPCs — fields
   /// that a given RPC does not return are simply null.
   factory Traveler.fromRow(Map<String, dynamic> row) {
     List<String> strings(dynamic v) =>
@@ -90,6 +114,9 @@ class Traveler {
       latitude: (row['lat'] as num?)?.toDouble(),
       longitude: (row['lng'] as num?)?.toDouble(),
       distanceKm: (row['distance_km'] as num?)?.toDouble(),
+      dateMatch: row['date_match'] as String?,
+      locationUpdatedAt:
+          DateTime.tryParse(row['location_updated_at'] as String? ?? '')?.toLocal(),
     );
   }
 }
