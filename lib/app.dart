@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/routing/app_router.dart';
-import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/widgets/keyboard_inset.dart';
@@ -13,7 +12,7 @@ import 'providers/auth_provider.dart';
 
 /// Root widget: theme, routing, full-screen system bars and keyboard handling.
 ///
-/// While the saved session is being restored the app shows a cream splash;
+/// While the saved session is being restored the app shows a blue splash (matching the native launch screen);
 /// once it is known the app opens on Home (signed in) or Welcome (signed out).
 class RovloApp extends StatelessWidget {
   const RovloApp({super.key});
@@ -70,11 +69,11 @@ class _Splash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      body: const Center(child: RovloLogo(fontSize: 44)),
+    // Same blue as the native launch screen (android rovlo_blue) so there is
+    // no cream flash between the two.
+    return const Scaffold(
+      backgroundColor: Color(0xFF1E88E5),
+      body: Center(child: RovloLogo(fontSize: 44, color: Colors.white)),
     );
   }
 }
