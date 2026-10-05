@@ -83,6 +83,7 @@ class _TravelerProfileScreenState extends State<TravelerProfileScreen> {
                       return Image.network(
                         _images[index],
                         fit: BoxFit.cover,
+                        cacheWidth: 1080,
                         errorBuilder: (_, __, ___) => Container(
                           color: Colors.grey.shade300,
                           child: const Icon(Icons.broken_image, size: 60),

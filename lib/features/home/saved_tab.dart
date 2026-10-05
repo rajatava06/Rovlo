@@ -117,6 +117,7 @@ class _SavedTabState extends State<SavedTab> {
                                 traveler.imageUrl,
                                 width: 70,
                                 height: 70,
+                                cacheWidth: 210,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
                                   width: 70,

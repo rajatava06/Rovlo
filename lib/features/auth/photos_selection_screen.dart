@@ -207,12 +207,16 @@ class _PhotosSelectionScreenState extends State<PhotosSelectionScreen> {
   }
 
   Widget _buildImage(String path) {
-    if (path.startsWith('http')) {
-      return Image.network(path, fit: BoxFit.cover);
-    } else if (kIsWeb) {
-      return Image.network(path, fit: BoxFit.cover);
-    } else {
-      return Image.file(File(path), fit: BoxFit.cover);
+    Widget broken(BuildContext _, Object __, StackTrace? ___) => const ColoredBox(
+          color: Color(0x14000000),
+          child: Center(child: Icon(Icons.broken_image_outlined)),
+        );
+    if (path.startsWith('http') || kIsWeb) {
+      return Image.network(path,
+          fit: BoxFit.cover, cacheWidth: 900, errorBuilder: broken);
     }
+    // Phone-camera photos are 4000+ px wide: decode them at screen size.
+    return Image.file(File(path),
+        fit: BoxFit.cover, cacheWidth: 900, errorBuilder: broken);
   }
 }
